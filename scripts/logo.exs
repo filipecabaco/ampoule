@@ -26,10 +26,10 @@ defmodule Logo do
     "D" => ~w(b c d e g)a
   }
   @tiles [
-    {{3, 3}, ~w(0 0), "#f2c14e", "#17181a"},
-    {{67, 3}, ~w(6 1), "#7a3a0b", "#ffe7a8"},
-    {{3, 67}, ~w(7 3), "#7a3a0b", "#ffe7a8"},
-    {{67, 67}, ~w(6 D), "#17181a", "#f2c14e"}
+    {{3, 3}, ~w(0 0), "#654ff0", "#ffffff"},
+    {{67, 3}, ~w(6 1), "#4e2a8e", "#e9e2f5"},
+    {{3, 67}, ~w(7 3), "#4e2a8e", "#e9e2f5"},
+    {{67, 67}, ~w(6 D), "#17181a", "#8f80ff"}
   ]
 
   defp digit(char, x, y) do
@@ -53,11 +53,11 @@ defmodule Logo do
   def full do
     tiles =
       Enum.map_join(@tiles, "", fn {pos, ds, fill, ink} ->
-        # The ink tile carries a gold rim so its edge holds on dark backgrounds too.
+        # The ink tile carries a blue rim so its edge holds on dark backgrounds too.
         rim =
           if fill == "#17181a",
             do:
-              ~s(    <rect x="#{elem(pos, 0) + 1.5}" y="#{elem(pos, 1) + 1.5}" width="55" height="55" rx="7.5" fill="none" stroke="#f2c14e" stroke-width="1.5"/>\n),
+              ~s(    <rect x="#{elem(pos, 0) + 1.5}" y="#{elem(pos, 1) + 1.5}" width="55" height="55" rx="7.5" fill="none" stroke="#654ff0" stroke-width="1.5"/>\n),
             else: ""
 
         "    #{rect(pos, fill)}\n" <>

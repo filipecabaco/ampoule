@@ -1,277 +1,198 @@
 ---
 name: ampoule
-description: The package insert folded inside ampoule's carton; the visual system of the landing site in site/.
+description: The two-step assembly sheet; the visual system of the landing site in site/.
 colors:
-  carton-amber: "#7a3a0b"
-  break-ring-gold: "#f2c14e"
-  beam-light: "#ffe7a8"
-  carton-ink: "#fbf1e1"
-  carton-ink-soft: "#f1cfa4"
-  leaflet-paper: "#f6f5f1"
-  typeset-ink: "#17181a"
-  ink-soft: "#55524b"
-  crease-rule: "#c9c4b8"
-  warning-red: "#a3261b"
-  terminal-ground: "#1d1b17"
-  terminal-ink: "#ece7dc"
-  terminal-dim: "#a8a093"
+  elixir-purple: "#4e2a8e"
+  wasm-blue: "#654ff0"
+  lavender-wash: "#efeafa"
+  sheet-white: "#ffffff"
+  drawing-ink: "#17181a"
+  ink-soft: "#4b4c4f"
 typography:
   display:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "clamp(4.5rem, 12.5vw, 6rem)"
-    fontWeight: 880
-    lineHeight: 0.82
-    letterSpacing: "-0.03em"
-    fontVariation: "'wdth' 78"
-  headline:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.6rem"
-    fontWeight: 650
-    lineHeight: 1.12
-    fontVariation: "'wdth' 85"
-  title:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.5rem"
-    fontWeight: 750
-    lineHeight: 1.25
-  subtitle:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.0625rem"
+    fontFamily: "Familjen Grotesk, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(4rem, 9vw, 6rem)"
     fontWeight: 700
-    lineHeight: 1.55
+    lineHeight: 0.85
+    letterSpacing: "-0.035em"
+  numeral:
+    fontFamily: "Familjen Grotesk, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(3.5rem, 5.4vw, 5.25rem)"
+    fontWeight: 700
+    lineHeight: 1
+    letterSpacing: "-0.03em"
+  headline:
+    fontFamily: "Familjen Grotesk, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(1.9rem, 4vw, 2.75rem)"
+    fontWeight: 700
+    lineHeight: 1.05
+    letterSpacing: "-0.03em"
+  title:
+    fontFamily: "Familjen Grotesk, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(1.45rem, 2.4vw, 1.9rem)"
+    fontWeight: 700
+    lineHeight: 1.12
+    letterSpacing: "-0.02em"
+  claim:
+    fontFamily: "Familjen Grotesk, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(1.35rem, 2.2vw, 1.75rem)"
+    fontWeight: 600
+    lineHeight: 1.2
   body:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
+    fontFamily: "Familjen Grotesk, Helvetica Neue, Arial, sans-serif"
     fontSize: "1.0625rem"
     fontWeight: 400
     lineHeight: 1.55
     fontFeature: "'tnum' 1"
   label:
-    fontFamily: "Archivo, Helvetica Neue, Arial, sans-serif"
-    fontSize: "0.875rem"
+    fontFamily: "Familjen Grotesk, Helvetica Neue, Arial, sans-serif"
+    fontSize: "0.9rem"
     fontWeight: 600
-    lineHeight: 1.55
+    lineHeight: 1.4
   code:
-    fontFamily: "Martian Mono, ui-monospace, SF Mono, Menlo, monospace"
-    fontSize: "0.8rem"
+    fontFamily: "JetBrains Mono, ui-monospace, SF Mono, Menlo, monospace"
+    fontSize: "0.82rem"
     fontWeight: 400
     lineHeight: 1.7
-    fontVariation: "'wdth' 87.5"
-  stamp:
-    fontFamily: "Martian Mono, ui-monospace, SF Mono, Menlo, monospace"
-    fontSize: "0.72rem"
-    fontWeight: 600
-    letterSpacing: "0.05em"
-    fontVariation: "'wdth' 87.5"
 rounded:
-  stamp: "3px"
-  control: "6px"
-  terminal: "8px"
-  pill: "999px"
+  hairline: "3px"
+  part: "4px"
+  plate: "6px"
+  panel: "8px"
+  chip: "999px"
 spacing:
-  gutter: "clamp(1.25rem, 2.5vw, 2.25rem)"
-  section-top: "2.75rem"
-  subsection-top: "1.75rem"
+  gutter: "clamp(1rem, 4vw, 3rem)"
+  sheet: "clamp(3rem, 6vw, 5rem)"
+  step: "clamp(1.75rem, 3vw, 2.5rem)"
 components:
   button-copy:
-    backgroundColor: "{colors.typeset-ink}"
-    textColor: "{colors.break-ring-gold}"
-    typography: "{typography.label}"
-    rounded: "{rounded.control}"
-    padding: "0.55rem 0.9rem"
-  button-copy-on-amber:
-    backgroundColor: "{colors.beam-light}"
-    textColor: "{colors.typeset-ink}"
-    typography: "{typography.label}"
-    rounded: "{rounded.control}"
-    padding: "0.55rem 0.9rem"
+    backgroundColor: "{colors.drawing-ink}"
+    textColor: "{colors.sheet-white}"
+    padding: "0 1rem"
+  button-copy-hover:
+    backgroundColor: "{colors.wasm-blue}"
+    textColor: "{colors.sheet-white}"
   chip-target:
-    backgroundColor: "{colors.break-ring-gold}"
-    textColor: "{colors.typeset-ink}"
-    typography: "{typography.label}"
-    rounded: "{rounded.pill}"
-    padding: "0.3rem 0.65rem"
-  chip-target-selected:
-    backgroundColor: "{colors.typeset-ink}"
-    textColor: "{colors.break-ring-gold}"
-    rounded: "{rounded.pill}"
-  band-install:
-    backgroundColor: "{colors.break-ring-gold}"
-    textColor: "{colors.typeset-ink}"
-    padding: "1rem {spacing.gutter} 1.1rem"
-  carton:
-    backgroundColor: "{colors.carton-amber}"
-    textColor: "{colors.carton-ink}"
-    padding: "{spacing.gutter}"
-  panel-leaflet:
-    backgroundColor: "{colors.leaflet-paper}"
-    textColor: "{colors.typeset-ink}"
-    padding: "0 {spacing.gutter} calc({spacing.gutter} * 1.5)"
-  terminal:
-    backgroundColor: "{colors.terminal-ground}"
-    textColor: "{colors.terminal-ink}"
-    typography: "{typography.code}"
-    rounded: "{rounded.terminal}"
-    padding: "1rem 1.15rem"
+    backgroundColor: "{colors.sheet-white}"
+    textColor: "{colors.drawing-ink}"
+    rounded: "{rounded.chip}"
+    padding: "0.3rem 0.75rem"
+  chip-target-checked:
+    backgroundColor: "{colors.wasm-blue}"
+    textColor: "{colors.sheet-white}"
+    rounded: "{rounded.chip}"
   command-plate:
-    backgroundColor: "{colors.break-ring-gold}"
-    textColor: "{colors.typeset-ink}"
-    rounded: "{rounded.control}"
-    padding: "0.75rem 1.1rem"
+    backgroundColor: "{colors.sheet-white}"
+    textColor: "{colors.drawing-ink}"
+    rounded: "{rounded.plate}"
+    typography: "{typography.code}"
+  the-part:
+    backgroundColor: "{colors.lavender-wash}"
+    textColor: "{colors.drawing-ink}"
+    rounded: "{rounded.plate}"
+    padding: "1.1rem 1.25rem 1.1rem 1rem"
+  step-numeral:
+    textColor: "{colors.drawing-ink}"
+    typography: "{typography.numeral}"
+    size: "clamp(5.5rem, 8vw, 8rem)"
+  step-numeral-done:
+    backgroundColor: "{colors.wasm-blue}"
+    textColor: "{colors.sheet-white}"
 ---
 
 # Design System: ampoule
 
-Scope: the GitHub Pages site in `site/` (`index.html`, `style.css`, `main.js`, `favicon.svg`, `fonts/`). The CSS custom properties in `site/style.css` (`--paper`, `--ink`, `--amber`, `--gold`, ...) are the source of these tokens; the frontmatter names them by role.
-
 ## Overview
 
-**Creative North Star: "The Package Insert"**
+**Creative North Star: "The Two-Step Assembly Sheet."** The site is the shortest assembly manual ever printed: one part, two steps. It borrows the grammar of wordless flat-pack instructions (circled step numerals at impact scale, pictogram figures drawn in heavy uniform strokes, an exploded drawing with callouts, a spec sheet) and refuses the category default of a dark terminal hero over a feature grid.
 
-The site is the leaflet folded inside ampoule's carton. The visitor opens the box: on the left an amber carton face printed in one ink, carrying the name at carton scale and a gold break-ring band that holds the install command; on the right, and then below in a three-panel unfolded sheet, white leaflet paper typeset in near-black, in numbered sections that follow a medicine leaflet's order (what it is, before you use it, how to use it, possible side effects, how to run and store it, contents of the pack). Limits are printed as warnings, at the same weight as capabilities.
+The page is a white sheet ruled into panels by 3px ink lines. Elixir purple owns one whole panel, the cover, so a visitor reads "Elixir" before a word is parsed; WebAssembly blue marks the one file and every active state. Everything else is black ink on white.
 
-Density is that of printed matter: long measures capped at 58–68ch, hairline rules between items, numbers set tabular, real terminal output instead of illustration. The material is paper and printed card, not glass and glow: depth comes only from the carton lying over the leaflet and from the creases between leaflet panels. One beam line, gold fading to nothing, crosses from the band over the seam toward section 1.
-
-The site deliberately refuses the dark terminal hero plus feature-card grid that CLI tools ship. Terminals appear only as specimens inside the leaflet, never as the page's ground.
-
-**Key Characteristics:**
-- Two materials: amber carton (`carton-amber`) and leaflet paper (`leaflet-paper`), never mixed within a panel.
-- One gold band per carton face, carrying the one primary action (install, or the closing `ampoule release`).
-- Numbered leaflet sections with medicine-leaflet headings; warnings as plain lists with red markers.
-- Lot-and-batch stamp block in uppercase mono on the carton.
-- Panels meet at fold creases and unfold on scroll; copying snaps the break ring.
-- No purple anywhere on the site.
+Tone is plain and positive. The page shows what ampoule does; it never sets ampoule against other tools (no crossed-out lists of things you no longer need).
 
 ## Colors
 
-A warm two-material palette: dark amber glass-and-card, warm white paper, near-black ink, and gold reserved for the break ring and action.
-
 ### Primary
-- **Carton Amber** (`carton-amber`): the carton face (the left 45% of the first viewport) and the bottom flap (footer). Also the link colour on paper, the `theme-color`, the scrollbar thumb, `accent-color` and caret. 7.90:1 as link text on paper.
-- **Break-Ring Gold** (`break-ring-gold`): the install band, the closing command plate, the `$` prompt in terminals, the text of ink-filled buttons and selected chips, `::selection`, the skip link. Gold is a surface for action or a mark of the ring, never body text on paper.
-
-### Secondary
-- **Beam Light** (`beam-light`): everything that is "light" on amber: links on the carton and flap, the one-ink mark stamp, the focus outline on amber, the copy button on the flap. 7.08:1 on amber.
+- **Elixir Purple** (`#4e2a8e`): the cover panel, drenched. Also the `$` prompt in commands, list markers and link underlines. It is the colour of the language this is for.
+- **WebAssembly Blue** (`#654ff0`): the one file (border and ×1 tab of the part card, the release-image section of the drawing) and every active state: the checked target chip, copy hover, selection, focus halo, a finished step's numeral.
 
 ### Neutral
-- **Leaflet Paper** (`leaflet-paper`): the page ground and every leaflet panel.
-- **Typeset Ink** (`typeset-ink`): body text and headings on paper (16.29:1), text on gold (10.59:1), the ring line, ink-filled buttons and selected chips, the default focus outline.
-- **Ink Soft** (`ink-soft`): intros, captions, table asides, the revision line (7.14:1 on paper).
-- **Crease Rule** (`crease-rule`): 1px hairlines between table rows, fact rows, the contents block and the sheet's top edge.
-- **Carton Ink** (`carton-ink`): text printed on amber (7.70:1).
-- **Carton Ink Soft** (`carton-ink-soft`): secondary text and stamp labels on amber (5.83:1).
-- **Warning Red** (`warning-red`): only the list markers of "Do not use ampoule if your app" (6.75:1 on paper). The warning text itself stays ink.
-- **Terminal Ground / Terminal Ink / Terminal Dim** (`terminal-ground`, `terminal-ink`, `terminal-dim`): the code specimens. Commands in terminal ink (13.94:1), program output in terminal dim (6.64:1), prompts in gold (10.25:1).
+- **Sheet White** (`#ffffff`): the ground of every panel except the cover.
+- **Drawing Ink** (`#17181a`): text, rules, pictograms, numerals, the copy buttons.
+- **Ink Soft** (`#4b4c4f`): secondary text, command output, notes.
+- **Lavender Wash** (`#efeafa`): the part card, inline code, the "Works" column, hover on chips.
 
 ### Named Rules
+**The Two-Worlds Rule.** Purple is Elixir, blue is WebAssembly; the page uses exactly these two hues, at page scale, and adds no third accent. Purple fills a region; blue marks things you can act on or the file you ship.
 
-**The No-Purple Rule.** No violet, purple or lilac appears anywhere on the site: not in CSS, not in the favicon, not in an inline SVG, not in a gradient, not as a hover state. This is a binding user decision. The mark is the four bytes every WebAssembly module starts with, `00 61 73 6D`, as a 2×2 grid of tiles with seven-segment hex digits (`assets/logo.svg`, generated by `scripts/logo.exs`): `00` gold `#f2c14e` with ink digits, `61` and `73` amber `#7a3a0b` with beam `#ffe7a8` digits, `6D` ink `#17181a` with gold digits and a gold rim. On the site it appears in two cuts only: the one-ink stamp (`#mark` symbol in `site/index.html`, tiles printed in `currentColor`, digits knocked out through a mask) and the full-colour favicon (`site/favicon.svg`, the same file as `assets/logo.svg`). Any new mark use takes one of these two cuts.
-
-**The One-Ink Carton Rule.** Everything printed on amber is in one ink family: carton ink for type, beam light for links, the mark and focus. No second accent appears on the carton except the gold band.
-
-**The Gold Is the Ring Rule.** Gold surfaces carry the action (install band, command plate) or mark the ring (ink-on-gold chips and buttons, `$` prompts). It is never used for decoration or for body text on paper.
-
-**The Measured Contrast Rule.** Every text pair is AA or better, and the ratios above were measured. A new pair is measured before it ships.
+**The Positive Rule.** Nothing is crossed out, compared or put down. Limits are stated plainly in "Before you start", next to what works.
 
 ## Typography
 
-**Display Font:** Archivo (variable, weight 100–900, width 62–125%), self-hosted from `site/fonts/archivo-latin.woff2`, with Helvetica Neue, Arial, sans-serif.
-**Label/Mono Font:** Martian Mono (variable, weight 300–600, width 75–112.5%), self-hosted from `site/fonts/martian-mono-latin.woff2`, with ui-monospace, SF Mono, Menlo, monospace. Both are under the OFL; the licence files sit beside the fonts.
-
-**Character:** One grotesque does the whole leaflet, and its width axis does the work a second display face would: condensed (78%) and very heavy for the name on the carton, slightly condensed for claims and headings, normal width for reading. Martian Mono, set at 87.5% width, is the typewriter of the stamps, terminals and measured figures.
+**Familjen Grotesk** (self-hosted, OFL) carries everything from the 6rem name to labels. **JetBrains Mono** (self-hosted, OFL) is for code, file names and the part number only.
 
 ### Hierarchy
-- **Display** (880, width 78%, `clamp(4.5rem, 12.5vw, 6rem)`, line-height 0.82, -0.03em): the name "ampoule" on the carton face, once per page. The flap's closing line is a sibling at width 70%, weight 820, `clamp(2rem, 5vw, 3.5rem)`.
-- **Headline** (650, width 85%, 1.6rem, 1.12): the carton claim, max 22ch, balanced. The leaflet title uses the same size at 750, width 90%.
-- **Title** (750, 1.5rem, 1.25): numbered leaflet section headings ("1. What ampoule is..."), balanced.
-- **Subtitle** (700, 1.0625rem): subsection headings inside a section ("Take special care", "Measured").
-- **Body** (400, 1.0625rem, 1.55, tabular numerals): leaflet text, capped at 68ch (58ch for the intro), `text-wrap: pretty`.
-- **Label** (600–650, 0.875rem): chips, buttons, carton links, footer links, captions.
-- **Code** (Martian Mono, width 87.5%, 0.8rem in terminals and the install command, 0.86em inline, 1.7 line-height in terminals).
-- **Stamp** (Martian Mono, 600 values / regular labels, 0.72rem, uppercase, 0.05em): only the lot-and-batch block on the carton.
-
-### Named Rules
-
-**The Width-Axis Rule.** Hierarchy is made with Archivo's weight and width axes, not with a second display family. Narrower and heavier means louder.
-
-**The Uppercase-Is-a-Stamp Rule.** Uppercase letterspaced mono belongs to the carton's lot stamp, a printed-carton device. It is not used as a section label or kicker above headings in the leaflet.
+- **Display** (700, `clamp(4rem, 9vw, 6rem)`, line-height 0.85, -0.035em): the name on the cover, once.
+- **Numeral** (700, up to 5.25rem inside an 8rem circle with a 6px stroke): ① and ②. They outweigh every heading on the sheet.
+- **Headline** (700, up to 2.75rem): sheet titles ("Steps 3 to 6", "Before you start").
+- **Title** (700, up to 1.9rem): step titles.
+- **Claim** (600, up to 1.75rem): the one-line offer under the name.
+- **Body** (400, 1.0625rem/1.55, tabular numerals): prose, 62–75ch.
+- **Code** (JetBrains Mono, 0.82rem/1.7): command plates.
 
 ## Layout
 
-The first viewport is the opened box: a two-column grid at 45fr / 55fr, at least `min(100svh, 58rem)` tall so very tall screens do not stretch the carton. Carton on the left, leaflet section 1 on the right with a slightly deeper left gutter (1.4× the gutter).
-
-Below it, the leaflet unfolds as a sheet: three equal panels on wide screens, with the last panel (section 6, contents of the pack) spanning two columns as the wide back page; two columns at or below 80rem; one column at or below 56rem, where the carton stacks above the leaflet and the beam line is hidden. At or below 30rem the install command and copy button stack, and the file-layout bar turns vertical.
-
-One fluid gutter (`spacing.gutter`) drives all panel padding; panels add 1.5× at the bottom. Sections open with 2.75rem above the heading, subsections 1.75rem. Lists inside sections space items 0.4rem apart. Content inside the leaflet never runs wider than 68ch even when the panel is wider. The page ends on the amber bottom flap, which repeats the one action and the source links.
+- Masthead strip (mark, part number `AM–0061736D`, links) over a 3px rule.
+- Sheet one is a two-column grid (`0.85fr 1.35fr`): the purple cover (name, claim, part card, facts line at its foot) beside the two steps. Each step is a grid of numeral and pictogram (left) and body (right).
+- Then full-width sheets, each closed by a 3px rule: the real output specimen, Steps 3–6 (two columns), Before you start, the exploded drawing, Specifications, and the back cover with `ampoule release` again.
+- Side gutter `clamp(1rem, 4vw, 3rem)`; sheets pad `clamp(3rem, 6vw, 5rem)` vertically.
+- Below 1020px sheet one stacks (cover on top). Below 640px each step puts the numeral and its pictogram side by side above the body, the exploded drawing switches to its vertical version, and the spec table becomes stacked rows.
 
 ## Elevation & Depth
 
-The page is flat print. Depth exists only where paper physically overlaps or folds, and every shadow is a soft, ink-tinted, negative-spread shadow.
-
-### Shadow Vocabulary
-- **Carton over leaflet** (`box-shadow: 18px 0 40px -18px rgb(23 24 26 / 0.45)`; on narrow screens `0 18px 40px -18px` downward): the carton lying on top of the paper.
-- **Fold crease** (`border-left: 1px solid rgb(255 255 255 / 0.9)` plus `box-shadow: -1px 0 0 rgb(23 24 26 / 0.16), inset 2rem 0 1.75rem -1.75rem rgb(23 24 26 / 0.13)`; rotated to the top edge on one column): every panel after the first in a row meets the previous one at a lit edge, a dark seam and a valley shade.
-- **Terminal specimen** (`box-shadow: 0 10px 30px -14px rgb(23 24 26 / 0.5)`): a code block sitting slightly off the page.
-
-### Named Rules
-
-**The Paper-Only Depth Rule.** Shadows come from paper geometry (overlap, crease) or a specimen laid on the page. No glows, no hover lifts, no card shadows on content.
+Flat print. There are no shadows at rest. Depth is only line weight: 3px ink for structure, 1.5px hairlines for detail, dashed lines for motion and leaders. The one transient effect is the part card's `arrive` ring: a 12px wasm-blue ring that contracts to nothing once on load.
 
 ## Shapes
 
-Print-sheet geometry: carton, band, panels and flap are square-edged, full-bleed rectangles. Radii are small and functional: 3px for the stamp block's ruled frame, 6px for buttons, the command plate and the file-layout bar, 8px for terminals, full pill only for the target chips. The band bleeds to the carton's edges with negative inline margin. The mark is a tilted vial (rotated 20°), always rendered from the `#mark` symbol.
+Square panels, cut by full-bleed rules. Radii are small and functional: 3px inline code, 4px drawing sections, 6px command plates and the part card, 8px the specimen and the rules grid, full pill only for target chips. Circles are reserved for numerals and callouts.
+
+Pictograms are authored geometry: a filled circle head, an 18-unit body stroke, 10-unit limbs, 4-unit furniture lines, all round-capped. They are wordless and consistent; never shaded or perspectived.
 
 ## Components
 
-### Buttons
-- **Shape:** gently rounded (6px), icon plus word, 0.55rem × 0.9rem.
-- **Copy (on gold):** ink fill, gold text, 650 weight label, copy icon (inline `#icon-copy` symbol). On success the label reads "Copied" and the icon swaps to `#icon-check` for 1.8 s; if the clipboard is refused, the command text is selected and the label reads "Selected".
-- **Copy on amber:** beam-light fill, ink text, used on the flap.
-- **Active:** `translateY(1px)` over 0.15s on `cubic-bezier(0.16, 1, 0.3, 1)`. No hover colour change.
-- **Focus:** 2px solid outline, offset 3px, ink on paper and gold, beam light on amber.
+### Step numeral
+A circle with a 6px ink stroke and a 700-weight digit. Copying a step's command fills it wasm blue with a white digit and turns it -8°. The small variant (3.25rem, 3px stroke) numbers Steps 3–6; the back cover repeats ① at 4.75rem.
 
-### Chips
-- **Style:** the four target selectors are visually hidden radio inputs inside labels; each chip is a pill with a 1px border at `rgb(23 24 26 / 0.55)` on gold, ink text.
-- **State:** hover darkens the border to full ink; checked fills ink with gold text; keyboard focus draws a 2px ink outline offset 2px.
+### Command plate
+A 1.5px ink outline on white, mono text, `$` prompt in Elixir purple, with the copy button docked on the right edge (ink fill, white label, copy icon). Hover turns the button wasm blue. On success the label reads "Copied" and the icon becomes a check for 1.8 s; if the clipboard is refused the text is selected and the label reads "Selected".
 
-### Cards / Containers
-- **Carton:** amber field, one-ink type, gutter padding, a 1.25rem flex gap between its parts.
-- **Leaflet panel:** paper ground, gutter padding, folded to its neighbour by the crease shadow. Panels are not cards: no radius, no border box, no hover.
-- **Terminal:** dark ground, 8px radius, specimen shadow, horizontal scroll at full width; inside narrow panels it wraps (`pre-wrap`, `overflow-wrap: anywhere`) so a command's end stays visible.
+### Target chips
+Pills with a 1.5px ink outline. The checked chip is wasm blue with white text; hover is lavender wash. The "Download for" label sits on its own line above them.
 
-### Navigation
-The only navigation is the leaflet's own contents list ("What is in this leaflet"): an ordered list in two balanced columns between hairline rules, plain amber underlined links (1px underline, 0.2em offset, 2px on hover). A skip link, gold with ink text, sits off-screen until focused. Footer links sit on the flap in beam light beside a small mark stamp.
+### The part card
+The single item in the inventory: lavender wash, 3px wasm-blue border, the mark at 4rem, the file name in mono, a one-sentence description, and a solid blue ×1 tab.
 
-### Install Band (signature)
-The break ring: a full-bleed gold band on the carton holding "Download for" target chips, the install command in Martian Mono, and the copy button. The command wraps only at spaces and at `<wbr>` after each `/` of the base URL, and the asset name never breaks. A gold beam line leaves the band's right edge across the seam (hidden on one column). Copying plays the ring snap: a 3px ink line draws across the band's bottom edge and fades (0.9s, ease-out).
+### Exploded drawing
+An inline SVG of the file: five outlined sections (4-unit ink stroke) pulled apart along a dashed axis, hairline detail inside, the release image filled wasm blue, the optional engine section dashed, dashed leaders down to circled callouts that match the numbered legend below. A vertical version replaces it on phones.
 
-### Lot Stamp
-A 1px frame at 70% carton ink, 3px radius, two-column grid of `dt`/`dd` pairs in uppercase Martian Mono: Lot, Contents, For, Licence, and a full-width Targets row.
+### Do / don't columns
+"Works" (lavender wash) and "Does not work" (white) inside one 3px-ruled panel, each headed by a drawn circled ✓ or ✗ symbol.
 
-### Measured Table and Facts List
-Rows separated by crease-rule hairlines. The measured table puts the claim left in Archivo and the figure right in bold Martian Mono, with an optional soft-ink aside under the figure. The facts list is an 11rem term column beside the description, collapsing to stacked on one column.
-
-### File-Layout Bar
-A proportional strip of the file's sections in order, 1px ink frame, 6px radius, ink dividers: runtime in amber, release image in gold, engine in a paper diagonal hatch, manifest plain paper, trailer solid ink. Labels sit at the bottom of each segment.
-
-### Leaflet Unfold (motion)
-Where `animation-timeline: view()` is supported and motion is not reduced, each panel unfolds from `perspective(1600px) rotateX(-14deg)` and 0.94 brightness to flat over the first 70% of its entry. With reduced motion, panels are static and smooth scrolling is off.
+### Specifications table
+Label left, measured value right at 1.35rem/700, 1.5px rules between rows, 3px rule on top.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** print the mark from the `#mark` symbol in one ink (`currentColor`), and use `site/favicon.svg` (the full-colour mark) where a coloured mark is needed.
-- **Do** keep amber surfaces one-ink: carton ink for text, beam light for links, marks and focus.
-- **Do** put the page's single primary action on gold, with ink text, and nothing else on gold surfaces.
-- **Do** set every terminal from real command output: commands in terminal ink, output in terminal dim, prompts in gold and unselectable.
-- **Do** state limits as a leaflet warning list with red markers and ink text, beside the capabilities.
-- **Do** build hierarchy with Archivo's weight and width axes; keep body text at 1.0625rem with tabular numerals and a 68ch cap.
-- **Do** measure the contrast of every new text pair and keep it at AA or better.
-- **Do** honour `prefers-reduced-motion`: no unfold, no smooth scroll.
+- **Do** use Elixir purple as a field (the cover) and WebAssembly blue for the file and active states, nothing else.
+- **Do** keep step numerals as the largest marks after the name.
+- **Do** draw any new figure or diagram in the pictogram grammar: uniform round-capped strokes, ink on white, one blue accent at most.
+- **Do** regenerate the mark with `scripts/logo.exs` and paste its colours into the `#mark` symbol in `site/index.html`.
+- **Do** keep every number and claim to what PRODUCT.md lists as evidence.
 
 ### Don't:
-- **Don't** use purple, violet or lilac anywhere on the site, and don't draw or hand-edit the mark: regenerate it with `scripts/logo.exs`.
-- **Don't** turn the page into a dark terminal hero with a feature-card grid; terminals are specimens on paper.
-- **Don't** add glows, hover lifts or drop shadows to content; depth is carton overlap, fold creases and terminal specimens only.
-- **Don't** use gold as text on paper or as decoration.
-- **Don't** put uppercase letterspaced labels above leaflet headings; uppercase mono is the carton's lot stamp only.
-- **Don't** add testimonials, logos, download counts or unmeasured figures to the measured table.
+- **Don't** cross out, compare or disparage other tools.
+- **Don't** add a third accent colour, gradients, glows or card shadows.
+- **Don't** put a small label above a heading.
+- **Don't** use a dark terminal hero or a grid of icon cards.
+- **Don't** shade or put perspective on pictograms.

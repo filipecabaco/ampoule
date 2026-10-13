@@ -63,7 +63,7 @@ function setupCopy() {
         await navigator.clipboard.writeText(source.textContent.trim());
         label.textContent = "Copied";
         icon.setAttribute("href", "#icon-check");
-        // Copying a step's command marks that step done: its numeral fills gold.
+        // Copying a step's command marks that step done: its numeral fills blue.
         const step = button.closest("[data-step]");
         if (step) step.classList.add("is-done");
       } catch {

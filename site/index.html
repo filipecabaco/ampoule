@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ampoule: one executable for your Elixir release</title>
   <meta name="description" content="ampoule packs an Elixir or Erlang release into one executable for macOS and Linux: the release, the BEAM compiled to WebAssembly, and the operating system it runs on, in a single file.">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#4e2a8e">
   <meta property="og:title" content="ampoule">
   <meta property="og:description" content="Pack an Elixir or Erlang release into one executable. Two steps.">
   <meta property="og:type" content="website">
@@ -21,15 +21,16 @@
     <defs>
       <!-- The mark: 00 61 73 6D, the bytes every wasm module starts with. Same drawing as favicon.svg. -->
       <symbol id="mark" viewBox="0 0 128 128">
-        <rect x="3" y="3" width="58" height="58" rx="9" fill="#f2c14e"/>
-        <path d="M15 18L27 18 M29 20L29 30 M29 34L29 44 M15 46L27 46 M13 34L13 44 M13 20L13 30 M37 18L49 18 M51 20L51 30 M51 34L51 44 M37 46L49 46 M35 34L35 44 M35 20L35 30" fill="none" stroke="#17181a" stroke-width="4.5" stroke-linecap="round"/>
-        <rect x="67" y="3" width="58" height="58" rx="9" fill="#7a3a0b"/>
-        <path d="M79 18L91 18 M93 34L93 44 M79 46L91 46 M77 34L77 44 M77 20L77 30 M79 32L91 32 M115 20L115 30 M115 34L115 44" fill="none" stroke="#ffe7a8" stroke-width="4.5" stroke-linecap="round"/>
-        <rect x="3" y="67" width="58" height="58" rx="9" fill="#7a3a0b"/>
-        <path d="M15 82L27 82 M29 84L29 94 M29 98L29 108 M37 82L49 82 M51 84L51 94 M51 98L51 108 M37 110L49 110 M37 96L49 96" fill="none" stroke="#ffe7a8" stroke-width="4.5" stroke-linecap="round"/>
+        <rect x="3" y="3" width="58" height="58" rx="9" fill="#654ff0"/>
+        <path d="M15 18L27 18 M29 20L29 30 M29 34L29 44 M15 46L27 46 M13 34L13 44 M13 20L13 30 M37 18L49 18 M51 20L51 30 M51 34L51 44 M37 46L49 46 M35 34L35 44 M35 20L35 30" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round"/>
+        <rect x="67" y="3" width="58" height="58" rx="9" fill="#4e2a8e"/>
+        <path d="M79 18L91 18 M93 34L93 44 M79 46L91 46 M77 34L77 44 M77 20L77 30 M79 32L91 32 M115 20L115 30 M115 34L115 44" fill="none" stroke="#e9e2f5" stroke-width="4.5" stroke-linecap="round"/>
+        <rect x="3" y="67" width="58" height="58" rx="9" fill="#4e2a8e"/>
+        <path d="M15 82L27 82 M29 84L29 94 M29 98L29 108 M37 82L49 82 M51 84L51 94 M51 98L51 108 M37 110L49 110 M37 96L49 96" fill="none" stroke="#e9e2f5" stroke-width="4.5" stroke-linecap="round"/>
         <rect x="67" y="67" width="58" height="58" rx="9" fill="#17181a"/>
-        <rect x="68.5" y="68.5" width="55" height="55" rx="7.5" fill="none" stroke="#f2c14e" stroke-width="1.5"/>
-        <path d="M79 82L91 82 M93 98L93 108 M79 110L91 110 M77 98L77 108 M77 84L77 94 M79 96L91 96 M115 84L115 94 M115 98L115 108 M101 110L113 110 M99 98L99 108 M101 96L113 96" fill="none" stroke="#f2c14e" stroke-width="4.5" stroke-linecap="round"/>
+        <rect x="68.5" y="68.5" width="55" height="55" rx="7.5" fill="none" stroke="#654ff0" stroke-width="1.5"/>
+        <path d="M79 82L91 82 M93 98L93 108 M79 110L91 110 M77 98L77 108 M77 84L77 94 M79 96L91 96 M115 84L115 94 M115 98L115 108 M101 110L113 110 M99 98L99 108 M101 96L113 96" fill="none" stroke="#8f80ff" stroke-width="4.5" stroke-linecap="round"/>
+        
       </symbol>
       <symbol id="icon-copy" viewBox="0 0 24 24">
         <rect x="8.5" y="8.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -56,7 +57,6 @@
       <span class="part-no">AM–0061736D</span>
     </a>
     <nav class="masthead-nav" aria-label="Site">
-      <a href="#inventory">Parts</a>
       <a href="#more">Steps 3–6</a>
       <a href="#specs">Specifications</a>
       <a href="https://github.com/filipecabaco/ampoule">GitHub</a>
@@ -70,20 +70,14 @@
         <p class="claim">Pack an Elixir or Erlang release into one executable. Two steps.</p>
 
         <section class="inventory" id="inventory" aria-labelledby="inventory-title">
-          <h2 id="inventory-title" class="inventory-title">On the machine that runs your app, you will not need</h2>
-          <ul class="parts" data-parts>
-            <li><span class="part-letter">A</span><span class="part-name">Erlang/OTP runtime</span><span class="qty">×1</span></li>
-            <li><span class="part-letter">B</span><span class="part-name">Elixir</span><span class="qty">×1</span></li>
-            <li><span class="part-letter">C</span><span class="part-name">OpenSSL</span><span class="qty">×1</span></li>
-            <li><span class="part-letter">D</span><span class="part-name">Shared libraries</span><span class="qty">×n</span></li>
-            <li><span class="part-letter">E</span><span class="part-name">A base image to hold them</span><span class="qty">×1</span></li>
-          </ul>
+          <h2 id="inventory-title" class="visually-hidden">What you ship</h2>
           <p class="the-part">
             <svg class="mark" aria-hidden="true"><use href="#mark"/></svg>
-            <span><span class="part-name">my_app-x86_64-linux</span><span class="part-desc">Your release, the BEAM compiled to WebAssembly, and the OS layer it runs on.</span></span>
+            <span><span class="part-name">my_app-x86_64-linux</span><span class="part-desc">Your release, the BEAM compiled to WebAssembly, and the OS layer it runs on. The machine that runs it needs nothing else.</span></span>
             <span class="qty">×1</span>
           </p>
         </section>
+        <p class="cover-foot">For Erlang/OTP 28 · macOS and Linux · arm64 and x86_64 · Apache-2.0</p>
       </div>
 
       <ol class="steps" id="steps" aria-label="Assembly">
@@ -98,7 +92,7 @@
             <path d="M74 84 H186 M86 84 V140 M174 84 V140" class="line"/>
             <path d="M100 79 H156" class="line heavy"/>
             <path d="M156 79 L166 36" class="line heavy"/>
-            <path class="gold-stroke" d="M114 54 l8 6 -8 6 M128 66 h12"/>
+            <path class="accent-stroke" d="M114 54 l8 6 -8 6 M128 66 h12"/>
           </svg>
           <div class="step-body">
             <h2 class="step-title">Get ampoule. Pack your project.</h2>
@@ -142,7 +136,7 @@ chmod +x ampoule</code></pre>
             <path d="M124 53 L134 61 L124 69" class="line"/>
             <rect x="142" y="26" width="46" height="112" rx="3" class="line box"/>
             <path d="M150 46 H180 M150 62 H180 M150 78 H180" class="line"/>
-            <circle cx="165" cy="120" r="5" class="gold-fill"/>
+            <circle cx="165" cy="120" r="5" class="accent-fill"/>
           </svg>
           <div class="step-body">
             <h2 class="step-title">Copy the one file over. Run it.</h2>
@@ -257,13 +251,52 @@ CMD ["start"]</code></pre>
 
     <section class="exploded" aria-labelledby="exploded-title">
       <h2 id="exploded-title" class="sheet-title">What is inside the file</h2>
-      <figure>
+      <figure class="drawing">
+        <!-- The file drawn in ink, its five sections pulled apart along one axis. -->
+        <svg class="draw-wide" viewBox="-4 0 1008 150" role="img" aria-label="The file, drawn as five sections pulled apart: runtime, release image, engine with NIFs, manifest, trailer">
+          <path class="ghost" d="M0 18 H1000"/>
+          <g class="parts-drawn">
+            <rect x="0" y="34" width="200" height="60" rx="4" class="sec"/>
+            <path class="hair" d="M26 52 h60 M26 66 h96 M26 80 h44"/>
+            <rect x="220" y="34" width="280" height="60" rx="4" class="sec fill-wasm"/>
+            <path class="hair-light" d="M248 34 v60 M276 34 v60 M304 34 v60 M332 34 v60 M360 34 v60 M388 34 v60 M416 34 v60 M444 34 v60 M472 34 v60"/>
+            <rect x="520" y="34" width="180" height="60" rx="4" class="sec dashed"/>
+            <rect x="720" y="34" width="140" height="60" rx="4" class="sec"/>
+            <path class="hair" d="M736 52 h80 M736 66 h104 M736 80 h64"/>
+            <rect x="880" y="34" width="120" height="60" rx="4" class="sec"/>
+            <path class="hair" d="M898 66 h28"/>
+          </g>
+          <path class="leader" d="M100 94 V124 M360 94 V124 M610 94 V124 M790 94 V124 M940 94 V124"/>
+          <g class="callouts">
+            <circle cx="100" cy="134" r="13"/><text x="100" y="139">1</text>
+            <circle cx="360" cy="134" r="13"/><text x="360" y="139">2</text>
+            <circle cx="610" cy="134" r="13"/><text x="610" y="139">3</text>
+            <circle cx="790" cy="134" r="13"/><text x="790" y="139">4</text>
+            <circle cx="940" cy="134" r="13"/><text x="940" y="139">5</text>
+          </g>
+        </svg>
+        <svg class="draw-wide draw-tall" viewBox="0 0 240 542" aria-hidden="true">
+          <path class="ghost" d="M16 8 V528"/>
+            <rect x="40" y="8" width="120" height="94" rx="4" class="sec"/>
+            <rect x="40" y="116" width="120" height="176" rx="4" class="sec fill-wasm"/>
+            <rect x="40" y="306" width="120" height="94" rx="4" class="sec dashed"/>
+            <rect x="40" y="414" width="120" height="53" rx="4" class="sec"/>
+            <rect x="40" y="481" width="120" height="47" rx="4" class="sec"/>
+          <path class="leader" d="M160 55 H193 M160 204 H193 M160 353 H193 M160 440 H193 M160 504 H193"/>
+          <g class="callouts">
+            <circle cx="208" cy="55" r="13"/><text x="208" y="60">1</text>
+            <circle cx="208" cy="204" r="13"/><text x="208" y="209">2</text>
+            <circle cx="208" cy="353" r="13"/><text x="208" y="358">3</text>
+            <circle cx="208" cy="440" r="13"/><text x="208" y="445">4</text>
+            <circle cx="208" cy="504" r="13"/><text x="208" y="509">5</text>
+          </g>
+        </svg>
         <ol class="file">
-          <li class="seg seg-runtime"><span class="callout">1</span><span class="seg-name">ampoule runtime</span><span class="seg-desc">The OS layer, in Rust on wasmtime: WASI, threads, sockets, signals, a mount table and <code>/proc</code>.</span></li>
-          <li class="seg seg-image"><span class="callout">2</span><span class="seg-name">Release image</span><span class="seg-desc">Your release, one compressed frame per file.</span></li>
-          <li class="seg seg-engine"><span class="callout">3</span><span class="seg-name">Engine with NIFs</span><span class="seg-desc">Only when the app has NIFs: the BEAM relinked with them and precompiled for the target.</span></li>
-          <li class="seg seg-manifest"><span class="callout">4</span><span class="seg-name">Manifest</span><span class="seg-desc">Your commands, <code>serve</code> order, environment defaults and network policy.</span></li>
-          <li class="seg seg-trailer"><span class="callout">5</span><span class="seg-name">Trailer</span><span class="seg-desc">Where each section starts.</span></li>
+          <li><span class="callout">1</span><span class="seg-name">ampoule runtime</span><span class="seg-desc">The OS layer, in Rust on wasmtime: WASI, threads, sockets, signals, a mount table and <code>/proc</code>.</span></li>
+          <li><span class="callout">2</span><span class="seg-name">Release image</span><span class="seg-desc">Your release, one compressed frame per file.</span></li>
+          <li><span class="callout">3</span><span class="seg-name">Engine with NIFs</span><span class="seg-desc">Dashed: only there when the app has NIFs. The BEAM relinked with them and precompiled for the target.</span></li>
+          <li><span class="callout">4</span><span class="seg-name">Manifest</span><span class="seg-desc">Your commands, <code>serve</code> order, environment defaults and network policy.</span></li>
+          <li><span class="callout">5</span><span class="seg-name">Trailer</span><span class="seg-desc">Where each section starts.</span></li>
         </ol>
       </figure>
     </section>
