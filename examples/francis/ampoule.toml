@@ -1,0 +1,4 @@
+# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+
+[network]
+listen = [4000]   # the only port the app may bind; map it with --port-map 4000:8080

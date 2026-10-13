@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-13T10:30:00Z",
+  "title": "Design System: ampoule",
+  "extensions": {
+    "colorMeta": {
+      "carton-amber": { "role": "primary", "displayName": "Carton Amber", "canonical": "#7a3a0b", "cssVar": "--amber", "tonalRamp": ["#2a1203", "#4a2106", "#7a3a0b", "#9a5520", "#bb7a45", "#d6a173", "#ecc9a6", "#f9ebdc"] },
+      "break-ring-gold": { "role": "primary", "displayName": "Break-Ring Gold", "canonical": "#f2c14e", "cssVar": "--gold", "tonalRamp": ["#3d2c05", "#6b4f0d", "#9a7518", "#c99d2c", "#f2c14e", "#f6d27f", "#f9e2ac", "#fdf3da"] },
+      "beam-light": { "role": "secondary", "displayName": "Beam Light", "canonical": "#ffe7a8", "cssVar": "--beam", "tonalRamp": ["#3f3110", "#6d5720", "#9c7f37", "#c9a756", "#ecc97b", "#ffe7a8", "#fff1cc", "#fffaf0"] },
+      "carton-ink": { "role": "neutral", "displayName": "Carton Ink", "canonical": "#fbf1e1", "cssVar": "--amber-ink", "tonalRamp": ["#2f2a22", "#544b3d", "#7b6f5c", "#a2957f", "#c6b9a3", "#e3d7c3", "#fbf1e1", "#fffaf2"] },
+      "carton-ink-soft": { "role": "neutral", "displayName": "Carton Ink Soft", "canonical": "#f1cfa4", "cssVar": "--amber-ink-2", "tonalRamp": ["#33230f", "#5a3f1d", "#83602f", "#ab8346", "#d0a872", "#f1cfa4", "#f8e3c8", "#fdf4e9"] },
+      "leaflet-paper": { "role": "neutral", "displayName": "Leaflet Paper", "canonical": "#f6f5f1", "cssVar": "--paper", "tonalRamp": ["#262522", "#45433e", "#67645c", "#8b877d", "#afaa9f", "#d2cec4", "#ebe7dc", "#f6f5f1"] },
+      "typeset-ink": { "role": "neutral", "displayName": "Typeset Ink", "canonical": "#17181a", "cssVar": "--ink", "tonalRamp": ["#17181a", "#2c2d30", "#45474b", "#616368", "#7f8187", "#a0a2a7", "#c4c5c9", "#e8e9eb"] },
+      "ink-soft": { "role": "neutral", "displayName": "Ink Soft", "canonical": "#55524b", "cssVar": "--ink-2", "tonalRamp": ["#1d1c19", "#36342f", "#55524b", "#75716a", "#96928a", "#b7b3ab", "#d7d4cd", "#f2f0ec"] },
+      "crease-rule": { "role": "neutral", "displayName": "Crease Rule", "canonical": "#c9c4b8", "cssVar": "--rule", "tonalRamp": ["#26241f", "#47443c", "#69655b", "#8c877b", "#ada89b", "#c9c4b8", "#e0dcd2", "#f4f2ed"] },
+      "warning-red": { "role": "tertiary", "displayName": "Warning Red", "canonical": "#a3261b", "cssVar": "--warn", "tonalRamp": ["#330a06", "#5c130c", "#801c13", "#a3261b", "#c64c3f", "#de7e72", "#efb3aa", "#fbe5e1"] },
+      "terminal-ground": { "role": "neutral", "displayName": "Terminal Ground", "canonical": "#1d1b17", "cssVar": "--code-ground", "tonalRamp": ["#1d1b17", "#33302a", "#4c4840", "#67625a", "#847e75", "#a39d93", "#c5c0b6", "#e9e5dd"] },
+      "terminal-ink": { "role": "neutral", "displayName": "Terminal Ink", "canonical": "#ece7dc", "cssVar": "--code-ink", "tonalRamp": ["#28251f", "#48443b", "#6a655a", "#8d877b", "#b0aa9d", "#d0cabe", "#ece7dc", "#f9f7f2"] },
+      "terminal-dim": { "role": "neutral", "displayName": "Terminal Dim", "canonical": "#a8a093", "cssVar": "--code-dim", "tonalRamp": ["#221f1b", "#3f3b34", "#5e594f", "#7f786c", "#a8a093", "#c2bbb0", "#dcd7ce", "#f3f1ec"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Carton Name", "purpose": "The name on the carton face, once per page. Archivo 880 at font-stretch 78%." },
+      "headline": { "displayName": "Claim", "purpose": "Carton claim (650, stretch 85%) and leaflet title (750, stretch 90%)." },
+      "title": { "displayName": "Leaflet Section", "purpose": "Numbered leaflet section headings." },
+      "subtitle": { "displayName": "Subsection", "purpose": "Headings inside a leaflet section." },
+      "body": { "displayName": "Leaflet Text", "purpose": "Reading text, 68ch cap, tabular numerals." },
+      "label": { "displayName": "Label", "purpose": "Chips, buttons, carton and footer links, captions." },
+      "code": { "displayName": "Terminal", "purpose": "Terminals, install command, inline code, measured figures. Martian Mono at stretch 87.5%." },
+      "stamp": { "displayName": "Lot Stamp", "purpose": "Uppercase lot-and-batch block on the carton only." }
+    },
+    "shadows": [
+      { "name": "carton-over-leaflet", "value": "18px 0 40px -18px rgb(23 24 26 / 0.45)", "purpose": "The carton lying on the leaflet; becomes 0 18px 40px -18px when stacked on one column." },
+      { "name": "fold-crease", "value": "-1px 0 0 rgb(23 24 26 / 0.16), inset 2rem 0 1.75rem -1.75rem rgb(23 24 26 / 0.13)", "purpose": "Seam and valley shade where a leaflet panel meets the previous one; paired with border-left 1px rgb(255 255 255 / 0.9). Rotated to the top edge on one column." },
+      { "name": "terminal-specimen", "value": "0 10px 30px -14px rgb(23 24 26 / 0.5)", "purpose": "A code specimen laid on the paper." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Button press and the ring snap." },
+      { "name": "ring-snap", "value": "snap 0.9s cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "On copy: a 3px ink line draws across the band's bottom edge (0-45%) then fades." },
+      { "name": "leaflet-unfold", "value": "unfold linear both; animation-timeline: view(); animation-range: entry 0% entry 70%", "purpose": "Panels unfold from perspective(1600px) rotateX(-14deg), brightness 0.94, to flat. Only with prefers-reduced-motion: no-preference and view() support." },
+      { "name": "press", "value": "transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Buttons move down 1px while active." }
+    ],
+    "breakpoints": [
+      { "name": "sheet-two-column", "value": "80rem" },
+      { "name": "single-column", "value": "56rem" },
+      { "name": "narrow", "value": "30rem" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Copy Button",
+      "kind": "button",
+      "refersTo": "button-copy",
+      "description": "Ink button with gold label on the gold install band; copies the command and swaps to a check.",
+      "html": "<button class=\"ds-copy\" type=\"button\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"8.5\" y=\"8.5\" width=\"11\" height=\"11\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"/><path d=\"M15.5 8.5V5.75A1.25 1.25 0 0 0 14.25 4.5H5.75A1.25 1.25 0 0 0 4.5 5.75v8.5a1.25 1.25 0 0 0 1.25 1.25H8.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"/></svg><span>Copy</span></button>",
+      "css": ".ds-copy { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.55rem 0.9rem; border: 0; border-radius: 6px; background: #17181a; color: #f2c14e; font: 650 0.875rem/1 \"Archivo\", \"Helvetica Neue\", Arial, sans-serif; cursor: pointer; transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1); } .ds-copy svg { width: 1.05rem; height: 1.05rem; } .ds-copy:active { transform: translateY(1px); } .ds-copy:focus-visible { outline: 2px solid #17181a; outline-offset: 3px; }"
+    },
+    {
+      "name": "Copy Button on Amber",
+      "kind": "button",
+      "refersTo": "button-copy-on-amber",
+      "description": "Beam-light copy button used on the amber bottom flap.",
+      "html": "<div style=\"background:#7a3a0b;padding:1rem\"><button class=\"ds-copy-amber\" type=\"button\">Copy</button></div>",
+      "css": ".ds-copy-amber { padding: 0.55rem 0.9rem; border: 0; border-radius: 6px; background: #ffe7a8; color: #17181a; font: 650 0.875rem/1 \"Archivo\", \"Helvetica Neue\", Arial, sans-serif; cursor: pointer; transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1); } .ds-copy-amber:active { transform: translateY(1px); } .ds-copy-amber:focus-visible { outline: 2px solid #ffe7a8; outline-offset: 3px; }"
+    },
+    {
+      "name": "Target Chips",
+      "kind": "chip",
+      "refersTo": "chip-target",
+      "description": "Radio chips on the gold band choosing the download target; checked is ink with gold text.",
+      "html": "<div class=\"ds-band\"><fieldset class=\"ds-targets\"><legend>Download for</legend><label><input type=\"radio\" name=\"t\" checked><span>macOS arm64</span></label><label><input type=\"radio\" name=\"t\"><span>Linux x86_64</span></label></fieldset></div>",
+      "css": ".ds-band { background: #f2c14e; color: #17181a; padding: 1rem 1.5rem; font-family: \"Archivo\", \"Helvetica Neue\", Arial, sans-serif; } .ds-targets { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; padding: 0; border: 0; } .ds-targets legend { float: left; margin-right: 0.5rem; padding: 0.3rem 0; font-size: 0.875rem; font-weight: 650; } .ds-targets label { position: relative; } .ds-targets input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; } .ds-targets span { display: block; padding: 0.3rem 0.65rem; border: 1px solid rgb(23 24 26 / 0.55); border-radius: 999px; font-size: 0.875rem; font-weight: 600; white-space: nowrap; } .ds-targets label:hover span { border-color: #17181a; } .ds-targets input:checked + span { background: #17181a; color: #f2c14e; border-color: #17181a; } .ds-targets input:focus-visible + span { outline: 2px solid #17181a; outline-offset: 2px; }"
+    },
+    {
+      "name": "Install Band",
+      "kind": "custom",
+      "refersTo": "band-install",
+      "description": "The break ring: gold band on the carton holding the install command and copy; snaps an ink ring line on copy.",
+      "html": "<div class=\"ds-carton\"><div class=\"ds-install-band\"><pre><code>curl -fLo ampoule \"$base/ampoule-aarch64-darwin\"\nchmod +x ampoule</code></pre><span class=\"ds-ring\"></span></div></div>",
+      "css": ".ds-carton { background: #7a3a0b; padding: 1.5rem 0; } .ds-install-band { position: relative; background: #f2c14e; color: #17181a; padding: 1rem 1.5rem 1.1rem; } .ds-install-band pre { margin: 0; font: 400 0.8rem/1.6 \"Martian Mono\", ui-monospace, Menlo, monospace; white-space: pre-wrap; } .ds-ring { position: absolute; inset: auto 0 0 0; height: 3px; background: #17181a; transform-origin: left; transform: scaleX(0); transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); } .ds-install-band:hover .ds-ring { transform: scaleX(1); }"
+    },
+    {
+      "name": "Terminal Specimen",
+      "kind": "card",
+      "refersTo": "terminal",
+      "description": "Real command output on paper: commands in terminal ink, output dim, prompts gold.",
+      "html": "<pre class=\"ds-term\"><code><span class=\"ds-p\">$</span> ampoule release\n<span class=\"ds-o\">==&gt; packed in 0.3s</span></code></pre>",
+      "css": ".ds-term { margin: 0; padding: 1rem 1.15rem; border-radius: 8px; background: #1d1b17; color: #ece7dc; font: 400 0.8rem/1.7 \"Martian Mono\", ui-monospace, Menlo, monospace; box-shadow: 0 10px 30px -14px rgb(23 24 26 / 0.5); overflow-x: auto; } .ds-p { color: #f2c14e; user-select: none; } .ds-o { color: #a8a093; }"
+    },
+    {
+      "name": "Lot Stamp",
+      "kind": "custom",
+      "refersTo": "carton",
+      "description": "Lot-and-batch block printed on the carton in uppercase mono.",
+      "html": "<div class=\"ds-carton-bg\"><dl class=\"ds-stamps\"><div><dt>Lot</dt><dd>0.1.0</dd></div><div><dt>Licence</dt><dd>Apache-2.0</dd></div></dl></div>",
+      "css": ".ds-carton-bg { background: #7a3a0b; color: #fbf1e1; padding: 1.5rem; } .ds-stamps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem 1.25rem; margin: 0; padding: 0.85rem 1rem; border: 1px solid rgb(251 241 225 / 0.7); border-radius: 3px; font: 400 0.72rem/1.5 \"Martian Mono\", ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.05em; } .ds-stamps dt { color: #f1cfa4; } .ds-stamps dd { margin: 0; font-weight: 600; }"
+    },
+    {
+      "name": "Leaflet Panels with Crease",
+      "kind": "card",
+      "refersTo": "panel-leaflet",
+      "description": "Two paper panels meeting at a fold crease; warning list with red markers.",
+      "html": "<div class=\"ds-sheet\"><section class=\"ds-panel\"><h2>2. Before you use</h2><ul class=\"ds-warn\"><li>needs Erlang distribution</li></ul></section><section class=\"ds-panel\"><h2>3. How to use</h2><p>Run it in your project's root. <a href=\"#\">Read more</a></p></section></div>",
+      "css": ".ds-sheet { display: grid; grid-template-columns: 1fr 1fr; background: #f6f5f1; color: #17181a; font: 400 1.0625rem/1.55 \"Archivo\", \"Helvetica Neue\", Arial, sans-serif; } .ds-panel { padding: 0 1.5rem 2rem; } .ds-panel + .ds-panel { border-left: 1px solid rgb(255 255 255 / 0.9); box-shadow: -1px 0 0 rgb(23 24 26 / 0.16), inset 2rem 0 1.75rem -1.75rem rgb(23 24 26 / 0.13); } .ds-panel h2 { margin: 1.5rem 0 0.9rem; font-size: 1.5rem; font-weight: 750; line-height: 1.25; } .ds-warn li::marker { color: #a3261b; } .ds-panel a { color: #7a3a0b; text-decoration-thickness: 1px; text-underline-offset: 0.2em; } .ds-panel a:hover { text-decoration-thickness: 2px; } .ds-panel a:focus-visible { outline: 2px solid #17181a; outline-offset: 3px; border-radius: 2px; }"
+    },
+    {
+      "name": "Closing Command Plate",
+      "kind": "custom",
+      "refersTo": "command-plate",
+      "description": "The bottom flap: the dose line and the gold command plate.",
+      "html": "<div class=\"ds-flap\"><p class=\"ds-dose\">The dose is one command.</p><code class=\"ds-plate\">ampoule release</code></div>",
+      "css": ".ds-flap { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem; background: #7a3a0b; color: #fbf1e1; padding: 2rem 1.5rem; font-family: \"Archivo\", \"Helvetica Neue\", Arial, sans-serif; } .ds-dose { margin: 0; font-size: 2.5rem; font-stretch: 70%; font-weight: 820; line-height: 1; letter-spacing: -0.02em; } .ds-plate { padding: 0.75rem 1.1rem; border-radius: 6px; background: #f2c14e; color: #17181a; font: 400 1.05rem/1.4 \"Martian Mono\", ui-monospace, Menlo, monospace; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Package Insert",
+    "overview": "The site is the leaflet folded inside ampoule's carton. The visitor opens the box: on the left an amber carton face printed in one ink, carrying the name at carton scale and a gold break-ring band that holds the install command; on the right, and then below in a three-panel unfolded sheet, white leaflet paper typeset in near-black, in numbered sections that follow a medicine leaflet's order (what it is, before you use it, how to use it, possible side effects, how to run and store it, contents of the pack). Limits are printed as warnings, at the same weight as capabilities.\n\nDensity is that of printed matter: long measures capped at 58–68ch, hairline rules between items, numbers set tabular, real terminal output instead of illustration. The material is paper and printed card, not glass and glow: depth comes only from the carton lying over the leaflet and from the creases between leaflet panels. One beam line, gold fading to nothing, crosses from the band over the seam toward section 1.\n\nThe site deliberately refuses the dark terminal hero plus feature-card grid that CLI tools ship. Terminals appear only as specimens inside the leaflet, never as the page's ground.",
+    "keyCharacteristics": [
+      "Two materials: amber carton (`carton-amber`) and leaflet paper (`leaflet-paper`), never mixed within a panel.",
+      "One gold band per carton face, carrying the one primary action (install, or the closing `ampoule release`).",
+      "Numbered leaflet sections with medicine-leaflet headings; warnings as plain lists with red markers.",
+      "Lot-and-batch stamp block in uppercase mono on the carton.",
+      "Panels meet at fold creases and unfold on scroll; copying snaps the break ring.",
+      "No purple anywhere on the site."
+    ],
+    "rules": [
+      { "name": "The No-Purple Rule", "body": "No violet, purple or lilac appears anywhere on the site: not in CSS, not in the favicon, not in an inline SVG, not in a gradient, not as a hover state. This is a binding user decision. The brand's logo file `assets/logo.svg` is violet and stays as it is, but the site never embeds it. On the site the mark exists in two cuts only: the one-ink stamp (`#mark` symbol in `site/index.html`, glass printed in `currentColor`, ring and beam knocked out through a mask) and the favicon (`site/favicon.svg`: amber glass `#7a3a0b`, gold ring `#f2c14e`, beam `#ffe7a8`). Any new mark use takes one of these two cuts.", "section": "colors" },
+      { "name": "The One-Ink Carton Rule", "body": "Everything printed on amber is in one ink family: carton ink for type, beam light for links, the mark and focus. No second accent appears on the carton except the gold band.", "section": "colors" },
+      { "name": "The Gold Is the Ring Rule", "body": "Gold surfaces carry the action (install band, command plate) or mark the ring (ink-on-gold chips and buttons, `$` prompts). It is never used for decoration or for body text on paper.", "section": "colors" },
+      { "name": "The Measured Contrast Rule", "body": "Every text pair is AA or better, and the ratios above were measured. A new pair is measured before it ships.", "section": "colors" },
+      { "name": "The Width-Axis Rule", "body": "Hierarchy is made with Archivo's weight and width axes, not with a second display family. Narrower and heavier means louder.", "section": "typography" },
+      { "name": "The Uppercase-Is-a-Stamp Rule", "body": "Uppercase letterspaced mono belongs to the carton's lot stamp, a printed-carton device. It is not used as a section label or kicker above headings in the leaflet.", "section": "typography" },
+      { "name": "The Paper-Only Depth Rule", "body": "Shadows come from paper geometry (overlap, crease) or a specimen laid on the page. No glows, no hover lifts, no card shadows on content.", "section": "elevation" }
+    ],
+    "dos": [
+      "**Do** print the mark from the `#mark` symbol in one ink (`currentColor`), and use `site/favicon.svg`'s amber/gold/beam cut where a coloured mark is needed.",
+      "**Do** keep amber surfaces one-ink: carton ink for text, beam light for links, marks and focus.",
+      "**Do** put the page's single primary action on gold, with ink text, and nothing else on gold surfaces.",
+      "**Do** set every terminal from real command output: commands in terminal ink, output in terminal dim, prompts in gold and unselectable.",
+      "**Do** state limits as a leaflet warning list with red markers and ink text, beside the capabilities.",
+      "**Do** build hierarchy with Archivo's weight and width axes; keep body text at 1.0625rem with tabular numerals and a 68ch cap.",
+      "**Do** measure the contrast of every new text pair and keep it at AA or better.",
+      "**Do** honour `prefers-reduced-motion`: no unfold, no smooth scroll."
+    ],
+    "donts": [
+      "**Don't** use purple, violet or lilac anywhere on the site, and don't embed `assets/logo.svg` (violet) on the site. The logo file itself stays violet and is not to be edited.",
+      "**Don't** turn the page into a dark terminal hero with a feature-card grid; terminals are specimens on paper.",
+      "**Don't** add glows, hover lifts or drop shadows to content; depth is carton overlap, fold creases and terminal specimens only.",
+      "**Don't** use gold as text on paper or as decoration.",
+      "**Don't** put uppercase letterspaced labels above leaflet headings; uppercase mono is the carton's lot stamp only.",
+      "**Don't** add testimonials, logos, download counts or unmeasured figures to the measured table."
+    ]
+  }
+}

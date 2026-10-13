@@ -1,0 +1,44 @@
+# Toolchain for working on ampoule: `mise install`, then `mise run <task>`.
+# Rust comes from runner/rust-toolchain.toml (rustup).
+
+[tools]
+erlang = "28.5.0.4"     # the engine's OTP major: the engine build and packed releases need it
+elixir = "1.19.5-otp-28"
+
+[env]
+AMPOULE_WASI_SDK = "{{config_root}}/build/wasi-sdk"
+AMPOULE_KIT = "{{config_root}}/build/engine/kit"
+
+[tasks.engine]
+description = "Build the engine (ERTS for wasm) and the NIF kit into build/"
+run = "elixir scripts/engine.exs"
+
+[tasks.build]
+description = "Build the ampoule binary"
+depends = ["engine"]
+run = "cargo build --release"
+dir = "runner"
+
+[tasks.lint]
+description = "rustfmt and clippy"
+run = ["cargo fmt --check", "cargo clippy --all-targets -- -D warnings"]
+dir = "runner"
+
+[tasks.test]
+description = "Unit tests"
+run = "cargo test"
+dir = "runner"
+
+[tasks.smoke]
+description = "Pack test/fixture and check the packed app end to end"
+depends = ["build"]
+run = "elixir scripts/smoke.exs --network"
+
+[tasks.examples]
+description = "Run the examples' end-to-end suites (phoenix_ecto needs Postgres: E2E_DATABASE_URL)"
+depends = ["build"]
+run = "elixir scripts/examples.exs"
+
+[tasks.realtime]
+description = "Run Realtime's own e2e suite against Realtime packed with ampoule (needs ../realtime, Docker, the Supabase CLI and bun)"
+run = "elixir scripts/realtime.exs"

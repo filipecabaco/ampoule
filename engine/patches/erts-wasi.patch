@@ -1,0 +1,119 @@
+diff --git a/erts/emulator/beam/io.c b/erts/emulator/beam/io.c
+index d5b3b9d..9162b34 100644
+--- a/erts/emulator/beam/io.c
++++ b/erts/emulator/beam/io.c
+@@ -710,6 +710,14 @@ erts_open_driver(erts_driver_t* driver,	/* Pointer to driver. */
+         }
+ #endif
+ 
++#if defined(__EMSCRIPTEN__) || defined(__wasi__)
++	if (driver != &spawn_driver && driver != &fd_driver
++	    && driver != &forker_driver) {
++	    ErlDrvData (*start2)(ErlDrvPort, char *) =
++	        (ErlDrvData (*)(ErlDrvPort, char *)) driver->start;
++	    drv_data = (*start2)(ERTS_Port2ErlDrvPort(port), name);
++	} else
++#endif
+ 	drv_data = (*driver->start)(ERTS_Port2ErlDrvPort(port), name, opts);
+ 	if (((SWord) drv_data) == -1)
+ 	    error_type = -1;
+diff --git a/erts/emulator/sys/unix/erl_unix_sys.h b/erts/emulator/sys/unix/erl_unix_sys.h
+index a63f0b4..201f37e 100644
+--- a/erts/emulator/sys/unix/erl_unix_sys.h
++++ b/erts/emulator/sys/unix/erl_unix_sys.h
+@@ -46,7 +46,9 @@
+ #include <fcntl.h>
+ #include "erl_errno.h"
+ #include <signal.h>
++#ifndef __wasi__
+ #include <setjmp.h>
++#endif
+ 
+ #ifdef HAVE_SYS_SOCKETIO_H
+ #   include <sys/socketio.h>
+@@ -90,7 +92,9 @@
+ #include <ieeefp.h>
+ #endif
+ 
++#ifndef __wasi__
+ #include <pwd.h>
++#endif
+ 
+ #ifndef HZ
+ #define HZ 60
+@@ -403,7 +407,7 @@ extern int exit_async(void);
+ 
+ #define ERTS_EXIT_AFTER_DUMP _exit
+ 
+-#if !defined(__APPLE__) && !defined(__MACH__)
++#if !defined(__APPLE__) && !defined(__MACH__) && !defined(__EMSCRIPTEN__) && !defined(__wasi__)
+ /* Some OS X versions do not allow (ab)using signal handlers like this */
+ #define ERTS_HAVE_TRY_CATCH 1
+ 
+diff --git a/erts/emulator/sys/unix/sys.c b/erts/emulator/sys/unix/sys.c
+index 4663b68..ba01670 100644
+--- a/erts/emulator/sys/unix/sys.c
++++ b/erts/emulator/sys/unix/sys.c
+@@ -109,7 +109,9 @@ static int sig_suspend_fds[2] = {-1, -1};
+ #endif
+ 
+ 
++#ifdef ERTS_HAVE_TRY_CATCH
+ jmp_buf erts_sys_sigsegv_jmp;
++#endif
+ 
+ static int crashdump_companion_cube_fd = -1;
+ 
+@@ -1193,6 +1195,11 @@ init_smp_sig_notify(void)
+ 		 errno);
+     }
+ 
++#if defined(__wasi__)
++    /* No signals reach a wasm guest: the runtime delivers the host's through this pipe. */
++    __aos_signal_fd(sig_notify_fds[1]);
++#endif
++
+     /* Start signal handler thread */
+     erts_thr_create(&sig_dispatcher_tid,
+ 			signal_dispatcher_thread_func,
+diff --git a/erts/emulator/sys/unix/sys_drivers.c b/erts/emulator/sys/unix/sys_drivers.c
+index c06d6b6..4c7f240 100644
+--- a/erts/emulator/sys/unix/sys_drivers.c
++++ b/erts/emulator/sys/unix/sys_drivers.c
+@@ -481,6 +481,11 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name,
+     char *wd, *cwd;
+     int ifd[2], ofd[2], stderrfd;
+ 
++#if defined(__EMSCRIPTEN__) || defined(__wasi__)
++    errno = ENOTSUP;
++    return ERL_DRV_ERROR_ERRNO;
++#endif
++
+     if (pipe(ifd) < 0) return ERL_DRV_ERROR_ERRNO;
+     errno = EMFILE;		/* default for next three conditions */
+     if (ifd[0] >= sys_max_files() || pipe(ofd) < 0) {
+@@ -1598,6 +1603,11 @@ static ErlDrvData forker_start(ErlDrvPort port_num, char* name,
+ 
+     forker_port = erts_drvport2id(port_num);
+ 
++#if defined(__EMSCRIPTEN__) || defined(__wasi__)
++    forker_fd = -1;
++    return (ErlDrvData)port_num;
++#endif
++
+     res = erts_sys_explicit_8bit_getenv("BINDIR", bindir, &bindirsz);
+     if (res == 0) {
+         erts_exit(1, "Environment variable BINDIR is not set\n");
+diff --git a/lib/crypto/c_src/Makefile.in b/lib/crypto/c_src/Makefile.in
+index d36e76d..2965c04 100644
+--- a/lib/crypto/c_src/Makefile.in
++++ b/lib/crypto/c_src/Makefile.in
+@@ -180,7 +180,7 @@ endif
+ CONFIGURE_ARGS = -DDISABLE_EVP_DH=@DISABLE_EVP_DH@ -DDISABLE_EVP_HMAC=@DISABLE_EVP_HMAC@
+ 
+ ALL_CFLAGS = $(TYPE_FLAGS) $(EXTRA_FLAGS) $(CONFIGURE_ARGS) $(INCLUDES)
+-ALL_STATIC_CFLAGS = @DED_STATIC_CFLAGS@ $(TYPE_EXTRA_CFLAGS) $(CONFIGURE_ARGS) $(INCLUDES)
++ALL_STATIC_CFLAGS = @DED_STATIC_CFLAGS@ @SSL_FLAGS@ $(TYPE_EXTRA_CFLAGS) $(CONFIGURE_ARGS) $(INCLUDES)
+ 
+ # ----------------------------------------------------
+ # Targets

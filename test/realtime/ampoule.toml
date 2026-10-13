@@ -1,0 +1,12 @@
+# ampoule config for supabase/realtime, used by scripts/realtime.exs: in the realtime checkout,
+# `ampoule release --config ../ampoule/test/realtime/ampoule.toml`.
+
+# Like the image's run.sh: migrate, seed the self-hosted tenant when asked, then start.
+serve = ["migrate", { run = "seed", when = "SEED_SELF_HOST=true" }, "start"]
+
+[commands]
+migrate = "Realtime.Release.migrate"
+seed = "Realtime.Release.seeds(Realtime.Repo)"
+
+[start.env]
+PHX_SERVER = "true"

@@ -1,0 +1,14 @@
+ampoule
+Copyright 2026 Filipe Cabaço
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+ampoule binaries include, compiled to WebAssembly or linked in:
+
+- Erlang/OTP (https://www.erlang.org), Apache License 2.0, with the changes in
+  engine/patches/erts-wasi.patch.
+- OpenSSL (https://www.openssl.org), Apache License 2.0.
+- wasmtime and Cranelift (https://wasmtime.dev), Apache License 2.0 with LLVM exception.
+- wasi-libc and the LLVM runtime libraries from wasi-sdk (https://github.com/WebAssembly/wasi-sdk),
+  Apache License 2.0 with LLVM exception and compatible licenses.
+- zstd (https://facebook.github.io/zstd), BSD license.

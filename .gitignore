@@ -1,0 +1,20 @@
+# Engine build: downloads, wasi-sdk, OTP and OpenSSL trees, build/engine (scripts/engine.exs)
+/build/
+# Release outputs
+/dist/
+# Rust
+/runner/target*/
+# The smoke-test fixture's Mix build
+/test/fixture/_build/
+/test/fixture/deps/
+# Editors and OS
+.expert/
+.elixir_ls/
+.lexical/
+.DS_Store
+erl_crash.dump
+# impeccable: per-run review captures and decision payloads (the surface brief is kept)
+/.impeccable/review/
+/.impeccable/decision/
+/.impeccable/mocks/
+/.impeccable/questions/

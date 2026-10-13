@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-wasip1-threads"]  # for Rustler NIFs built at pack time

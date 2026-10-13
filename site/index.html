@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ampoule: one executable for your Elixir release</title>
+  <meta name="description" content="ampoule packs an Elixir or Erlang release into one executable for macOS and Linux: the release, the BEAM compiled to WebAssembly, and the operating system it runs on, sealed in a single file.">
+  <meta name="theme-color" content="#7a3a0b">
+  <meta property="og:title" content="ampoule">
+  <meta property="og:description" content="Pack an Elixir or Erlang release into one executable.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#leaflet">Skip to the leaflet</a>
+
+  <svg width="0" height="0" class="defs" aria-hidden="true" focusable="false">
+    <defs>
+      <!-- The ampoule mark printed in one ink: the glass as the ink, the break ring and the sealed
+           beam left unprinted. -->
+      <symbol id="mark" viewBox="0 0 128 128">
+        <mask id="mark-cut">
+          <rect width="128" height="128" fill="#fff"/>
+          <g transform="translate(64 64) rotate(20)" fill="#000">
+            <rect x="-1.9" y="-50" width="3.8" height="98" rx="1.9"/>
+            <rect x="-8" y="-30.75" width="16" height="4.5" rx="2.25"/>
+          </g>
+        </mask>
+        <g mask="url(#mark-cut)">
+          <path transform="translate(64 64) rotate(20)" d="M-17 48V-6C-17-14-6.5-14-6.5-20C-6.5-22-7-23-7-24.5C-7-26.5-4.5-27-4.5-28.5C-4.5-30-5.5-30.5-5.5-32V-47C-5.5-51-1.5-54 0-56C1.5-54 5.5-51 5.5-47V-32C5.5-30.5 4.5-30 4.5-28.5C4.5-27 7-26.5 7-24.5C7-23 6.5-22 6.5-20C6.5-14 17-14 17-6V48Q17 56 9 56H-9Q-17 56-17 48Z" fill="currentColor"/>
+        </g>
+      </symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24">
+        <rect x="8.5" y="8.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.75"/>
+        <path d="M15.5 8.5V5.75A1.25 1.25 0 0 0 14.25 4.5H5.75A1.25 1.25 0 0 0 4.5 5.75v8.5a1.25 1.25 0 0 0 1.25 1.25H8.5" fill="none" stroke="currentColor" stroke-width="1.75"/>
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <div class="opened">
+    <section class="carton" aria-labelledby="name">
+      <div class="carton-top">
+        <svg class="stamp" aria-hidden="true"><use href="#mark"/></svg>
+        <a class="carton-link" href="https://github.com/filipecabaco/ampoule">Source on GitHub</a>
+      </div>
+
+      <h1 id="name" class="carton-name">ampoule</h1>
+      <p class="carton-claim">Pack an Elixir or Erlang release into one executable.</p>
+      <p class="carton-sub">Your release, the BEAM and the operating system it runs on, sealed in a single file for macOS and Linux.</p>
+
+      <div class="band" id="install" data-band>
+        <span class="ring" aria-hidden="true"></span>
+        <fieldset class="targets">
+          <legend>Download for</legend>
+          <label><input type="radio" name="target" value="aarch64-darwin" checked><span>macOS arm64</span></label>
+          <label><input type="radio" name="target" value="x86_64-darwin"><span>macOS x86_64</span></label>
+          <label><input type="radio" name="target" value="aarch64-linux"><span>Linux arm64</span></label>
+          <label><input type="radio" name="target" value="x86_64-linux"><span>Linux x86_64</span></label>
+        </fieldset>
+        <div class="install">
+          <pre class="install-cmd"><code data-install>base=https://<wbr>github.com/<wbr>filipecabaco/<wbr>ampoule/<wbr>releases/<wbr>latest/<wbr>download
+curl -fLo ampoule <span class="token">"$base/ampoule-aarch64-darwin"</span>
+chmod +x ampoule</code></pre>
+          <button class="copy" type="button" data-copy="[data-install]">
+            <svg aria-hidden="true"><use href="#icon-copy"/></svg>
+            <span data-copy-label>Copy</span>
+          </button>
+        </div>
+      </div>
+      <p class="carton-note">No release is published yet. Until v0.1.0 lands, <a href="https://github.com/filipecabaco/ampoule/blob/main/CONTRIBUTING.md">build it from source</a>.</p>
+
+      <dl class="carton-stamps">
+        <div><dt>Lot</dt><dd>0.1.0</dd></div>
+        <div><dt>Contents</dt><dd>1 executable</dd></div>
+        <div><dt>For</dt><dd>Erlang/OTP 28</dd></div>
+        <div><dt>Licence</dt><dd>Apache-2.0</dd></div>
+        <div class="wide"><dt>Targets</dt><dd>macOS, Linux; arm64, x86_64</dd></div>
+      </dl>
+    </section>
+
+    <section class="leaflet-first" id="leaflet" aria-labelledby="leaflet-title">
+      <h2 id="leaflet-title" class="leaflet-title">Package leaflet: information for the developer</h2>
+      <p class="leaflet-product">ampoule 0.1.0, single-file releases for the BEAM</p>
+      <p class="leaflet-intro">Read all of this leaflet before you start shipping. Keep it; you may need to read it again.</p>
+
+      <nav class="contents" aria-labelledby="contents-title">
+        <h3 id="contents-title">What is in this leaflet</h3>
+        <ol>
+          <li><a href="#what">What ampoule is and what it is used for</a></li>
+          <li><a href="#before">What you need to know before you use ampoule</a></li>
+          <li><a href="#how">How to use ampoule</a></li>
+          <li><a href="#effects">Possible side effects</a></li>
+          <li><a href="#store">How to run and store ampoule</a></li>
+          <li><a href="#contents">Contents of the pack and other information</a></li>
+        </ol>
+      </nav>
+
+      <article class="section" id="what">
+        <h2>1. What ampoule is and what it is used for</h2>
+        <p>ampoule turns a Mix project into one executable file per platform. The file carries your release unchanged, the BEAM compiled to WebAssembly and precompiled to native code, and an operating-system layer written in Rust. Copy it to a Mac or a Linux machine and run it: nothing else has to be installed there.</p>
+        <pre class="term" aria-label="Packing and starting an app"><code><span class="p">$</span> cd my_app
+<span class="p">$</span> ampoule release
+<span class="o">==&gt; MIX_ENV=prod mix release --overwrite
+==&gt; my_app 0.1.0: 1018 files, 11.6 MiB → 5.2 MiB image (32 paths pruned)
+_build/prod/ampoule/my_app-aarch64-darwin (26.3 MiB)
+==&gt; packed in 0.3s; run `&lt;binary&gt; help` for its commands</span>
+
+<span class="p">$</span> _build/prod/ampoule/my_app-aarch64-darwin start
+<span class="o">[info] Running MyApp with Bandit 1.11.1 at 0.0.0.0:4000 (http)</span></code></pre>
+        <p>The file behaves like the release's own <code>bin/my_app</code>: <code>start</code>, <code>eval</code>, your own commands such as <code>migrate</code>, configuration from environment variables, and a clean <code>init:stop()</code> on SIGTERM.</p>
+      </article>
+    </section>
+  </div>
+
+  <main class="sheet">
+    <article class="section panel" id="before">
+      <h2>2. What you need to know before you use ampoule</h2>
+      <h3>Do not use ampoule if your app</h3>
+      <ul class="warn">
+        <li>starts host programs: ports, <code>:os.cmd/1</code> and <code>System.cmd/3</code> cannot start anything;</li>
+        <li>needs Erlang distribution: the app runs as one node;</li>
+        <li>is built with an OTP major other than 28: the engine runs ERTS 16.</li>
+      </ul>
+      <h3>Take special care</h3>
+      <ul>
+        <li>NIFs are rebuilt for wasm when you pack, from C, C++ or Rust. Packing them needs <a href="https://github.com/WebAssembly/wasi-sdk/releases">wasi-sdk</a> 34, and Rust NIFs also need <code>rustup target add wasm32-wasip1-threads</code>.</li>
+        <li>A thread a NIF starts must return from its function. <code>enif_thread_exit</code> ends it without cleanup, and joining that thread never returns.</li>
+      </ul>
+      <h3>What packing needs</h3>
+      <p>Elixir and Erlang/OTP 28 on the machine that packs. The machine that runs the file needs nothing.</p>
+    </article>
+
+    <article class="section panel" id="how">
+      <h2>3. How to use ampoule</h2>
+      <p>Run it in your project's root. It runs <code>mix release</code> and packs the result.</p>
+      <pre class="term"><code><span class="p">$</span> ampoule release</code></pre>
+      <p>Then run the file the way you would run the release's script:</p>
+      <pre class="term"><code><span class="p">$</span> ./my_app-aarch64-darwin start
+<span class="p">$</span> ./my_app-aarch64-darwin eval 'IO.puts(MyApp.version())'
+<span class="p">$</span> PORT=8080 ./my_app-aarch64-darwin serve</code></pre>
+      <h3>If your app migrates a database before it starts</h3>
+      <p>Put the order in <code>ampoule.toml</code> at the project root; packing stores it in the file.</p>
+      <pre class="term toml"><code>serve = ["migrate", "start"]
+
+[commands]
+migrate = "MyApp.Release.migrate()"
+
+[start.env]
+PHX_SERVER = "true"</code></pre>
+      <p><code>serve</code> then runs the migrations and starts the app; <code>migrate</code> runs them on their own.</p>
+      <h3>Packing for other platforms</h3>
+      <p>One machine packs for all four targets. Put each target's <code>ampoule-&lt;target&gt;</code> binary from a release in a directory:</p>
+      <pre class="term"><code><span class="p">$</span> AMPOULE_STUBS=~/ampoule-stubs ampoule release --target aarch64-darwin --target x86_64-linux</code></pre>
+    </article>
+
+    <article class="section panel" id="effects">
+      <h2>4. Possible side effects</h2>
+      <p>What changes when an app runs under ampoule instead of its own release script:</p>
+      <ul>
+        <li>The app reports itself as Linux on every host: <code>:os.type()</code> returns <code>{:unix, :linux}</code>.</li>
+        <li>Each run gets a private <code>/tmp</code>, removed when the app exits. A run that wrote <code>erl_crash.dump</code> keeps it and prints where.</li>
+        <li>Precompressed static files (<code>.gz</code>, <code>.br</code>) are not packed; <code>Plug.Static</code> serves the uncompressed file.</li>
+        <li><code>.beam</code> files lose their debug and docs chunks, so <code>Code.fetch_docs/1</code> has nothing to show.</li>
+      </ul>
+      <h3 id="measured">Measured</h3>
+      <table class="measured" aria-describedby="measured">
+        <tbody>
+          <tr><th scope="row">Binary size, <a href="https://github.com/filipecabaco/ampoule/tree/main/examples/francis">examples/francis</a> on macOS arm64</th><td>26.3 MiB</td></tr>
+          <tr><th scope="row">Packing time, after <code>mix release</code></th><td>0.3 s</td></tr>
+          <tr><th scope="row">First HTTP response after launch</th><td>0.3 s <span class="aside">1 s on a cold first run</span></td></tr>
+          <tr><th scope="row"><code>docker stop</code> in a <code>FROM scratch</code> container</th><td>1 s, clean</td></tr>
+          <tr><th scope="row">Supabase Realtime, its own end-to-end suite</th><td>53 of 53</td></tr>
+          <tr><th scope="row">The examples' end-to-end suites</th><td>22 of 22</td></tr>
+        </tbody>
+      </table>
+    </article>
+
+    <article class="section panel" id="store">
+      <h2>5. How to run and store ampoule</h2>
+      <p>On a server, copy the file and run it:</p>
+      <pre class="term"><code><span class="p">$</span> scp my_app-x86_64-linux server:
+<span class="p">$</span> ssh server 'DATABASE_URL=… ./my_app-x86_64-linux serve'</code></pre>
+      <p>In a container, the file is the only thing the image needs:</p>
+      <pre class="term"><code>FROM scratch
+COPY my_app-aarch64-linux /my_app
+ENTRYPOINT ["/my_app"]
+CMD ["start"]</code></pre>
+      <p>Stop it with SIGTERM or Ctrl-C: the release shuts down through <code>init:stop()</code> and exits 0, as it would natively. A second signal, or an app still running after <code>--stop-timeout</code>, exits at once.</p>
+      <p>The app sees only its mounts: the release at <code>/app</code>, a private <code>/tmp</code>, <code>/etc/hosts</code>, <code>/etc/resolv.conf</code>, the host's CA bundle, <code>/dev/null</code>, a generated <code>/proc</code>, and anything you pass with <code>--mount</code>. Symlinks resolve inside that view, never the host's. <code>--listen</code>, <code>--port-map</code>, <code>--deny-connect</code> and <code>--rewrite-connect</code> decide which ports it binds and where it may connect.</p>
+    </article>
+
+    <article class="section panel" id="contents">
+      <h2>6. Contents of the pack and other information</h2>
+      <p>What the file holds, in order:</p>
+      <figure class="layout" aria-labelledby="layout-caption">
+        <ol class="layout-bar">
+          <li class="seg seg-runtime"><span>ampoule runtime</span></li>
+          <li class="seg seg-image"><span>release image</span></li>
+          <li class="seg seg-engine"><span>engine with NIFs</span></li>
+          <li class="seg seg-manifest"><span>manifest</span></li>
+          <li class="seg seg-trailer"><span>trailer</span></li>
+        </ol>
+        <figcaption id="layout-caption">The release image holds your release, one compressed frame per file. The engine section is there only when the app has NIFs: the BEAM relinked with them and precompiled for the target. The manifest holds your commands, <code>serve</code> order, environment defaults and network policy.</figcaption>
+      </figure>
+      <dl class="facts">
+        <div><dt>Targets</dt><dd>aarch64-darwin, x86_64-darwin, aarch64-linux, x86_64-linux</dd></div>
+        <div><dt>Engine</dt><dd>ERTS 16.4.0.4 from Erlang/OTP 28.5.0.4, compiled to <code>wasm32-wasip1-threads</code> and run by wasmtime</dd></div>
+        <div><dt>Operating-system layer</dt><dd>WASI preview 1, threads, sockets, signals, a mount table and <code>/proc</code>, in Rust</dd></div>
+        <div><dt>Examples</dt><dd><a href="https://github.com/filipecabaco/ampoule/tree/main/examples/phoenix_ecto">Phoenix and Ecto</a>, <a href="https://github.com/filipecabaco/ampoule/tree/main/examples/francis">Francis</a>, <a href="https://github.com/filipecabaco/ampoule/tree/main/examples/rustler">Rustler</a>, each with an end-to-end suite</dd></div>
+        <div><dt>Licence</dt><dd><a href="https://github.com/filipecabaco/ampoule/blob/main/LICENSE">Apache-2.0</a></dd></div>
+      </dl>
+      <p class="revised">This leaflet was last revised in October 2026.</p>
+    </article>
+  </main>
+
+  <footer class="flap">
+    <div class="flap-inner">
+      <p class="flap-dose">The dose is one command.</p>
+      <pre class="flap-cmd"><code data-dose>ampoule release</code></pre>
+      <button class="copy copy-on-amber" type="button" data-copy="[data-dose]">
+        <svg aria-hidden="true"><use href="#icon-copy"/></svg>
+        <span data-copy-label>Copy</span>
+      </button>
+      <a class="flap-install" href="#install">Not installed yet? Get the binary first.</a>
+    </div>
+    <p class="flap-links">
+      <svg class="stamp stamp-small" aria-hidden="true"><use href="#mark"/></svg>
+      <a href="https://github.com/filipecabaco/ampoule">GitHub</a>
+      <a href="https://github.com/filipecabaco/ampoule#readme">README</a>
+      <a href="https://github.com/filipecabaco/ampoule/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/filipecabaco/ampoule/blob/main/LICENSE">Apache-2.0</a>
+    </p>
+  </footer>
+</body>
+</html>

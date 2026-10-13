@@ -1,0 +1,89 @@
+# On a version tag: build ampoule for every target and publish a GitHub release with, per target,
+# a tarball (ampoule, the NIF kit, LICENSE, NOTICE, README.md) and the bare binary (usable as a
+# --stub / AMPOULE_STUBS entry for cross-target packing), plus SHA256SUMS.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    uses: ./.github/workflows/engine.yml
+
+  build:
+    needs: engine
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: aarch64-darwin, target: aarch64-apple-darwin, os: macos-15 }
+          - { name: x86_64-darwin, target: x86_64-apple-darwin, os: macos-15 }
+          - { name: aarch64-linux, target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { name: x86_64-linux, target: x86_64-unknown-linux-musl, os: ubuntu-24.04 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine
+          path: build/engine
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: "1.99.0"
+          targets: ${{ matrix.target }}
+
+      - name: musl toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
+      - name: Build
+        working-directory: runner
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          pkg="ampoule-${version}-${{ matrix.name }}"
+          mkdir -p "dist/$pkg"
+          cp "runner/target/${{ matrix.target }}/release/ampoule" "dist/$pkg/"
+          cp -R build/engine/kit "dist/$pkg/kit"
+          cp LICENSE NOTICE README.md "dist/$pkg/"
+          tar -C dist -czf "dist/$pkg.tar.gz" "$pkg"
+          cp "runner/target/${{ matrix.target }}/release/ampoule" "dist/ampoule-${{ matrix.name }}"
+          rm -rf "dist/$pkg"
+
+      - name: Check the binary runs
+        if: matrix.name != 'x86_64-darwin'
+        run: dist/ampoule-${{ matrix.name }} version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.name }}
+          path: dist
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum ampoule-* > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes ./*

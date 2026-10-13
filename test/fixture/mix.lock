@@ -1,0 +1,3 @@
+%{
+  "eiconv": {:hex, :eiconv, "1.0.0", "ee1e47ee37799a05beff7a68d61f63cccc93101833c4fb94b454c23b12a21629", [:rebar3], [], "hexpm", "8c80851decf72fc4571a70278d7932e9a87437770322077ecf797533fbb792cd"},
+}

@@ -1,0 +1,77 @@
+# Product
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+web
+
+## Stack
+
+Static HTML/CSS with a little JavaScript, no build step and no dependencies, in `site/`, deployed by a
+GitHub Actions Pages workflow (actions pinned to node24 releases).
+
+## Users
+
+Elixir developers shipping apps: people with a Phoenix, Francis, Ecto or plain OTP project who want
+to hand a server or tool to someone as one file, without asking them to install Erlang or Elixir,
+and without building a container around a runtime.
+
+## Product Purpose
+
+ampoule turns a Mix project into one executable file per platform. The file carries the release,
+the BEAM compiled to WebAssembly and precompiled to native code, and an operating-system layer
+written in Rust. Success: a developer runs `ampoule release` on their own project and ships the
+resulting file.
+
+## Positioning
+
+The release runs unchanged, as a normal release would (`start`, `eval`, custom commands, environment
+configuration, `init:stop()` on SIGTERM), inside a sandbox that only sees its own mounts. NIFs (C,
+C++, Rust) are rebuilt for wasm at pack time, and one machine packs for every platform.
+
+## Operating Context
+
+The developer works in a terminal inside their Mix project, then copies the binary to a server, puts
+it alone in a `FROM scratch` container, or hands it to someone else. Packing needs Elixir and OTP 28;
+running needs nothing.
+
+## Capabilities and Constraints
+
+- Targets: aarch64-darwin, x86_64-darwin, aarch64-linux, x86_64-linux.
+- OTP major fixed by the engine (OTP 28, ERTS 16).
+- No host processes (ports, `System.cmd`), one node (no distribution), NIF threads must return
+  rather than call `enif_thread_exit`.
+- Not yet released: the first GitHub release has not been published.
+
+## Brand Commitments
+
+- Name: ampoule, lowercase. An ampoule is a sealed glass vial holding a single dose; in French the
+  word also means light bulb.
+- Logo: `assets/logo.svg` (and `assets/logo-small.svg`), a tilted violet glass ampoule with a gold
+  break ring and a beam of light sealed along its axis. Its colours are binding for the site:
+  violet glass `#7d45c4` to `#4b1d8c`, break ring gold `#f2c14e`, beam light `#ffe7a8` to `#fffaf0`.
+- License: Apache-2.0.
+- Voice: plain and concrete; show commands and real output instead of adjectives (README.md).
+
+## Evidence on Hand
+
+- Measured on `examples/francis` (aarch64-darwin): packs to 26.3 MiB in 0.3 s after `mix release`;
+  first HTTP response about 0.3 s after launch (about 1 s on a cold first run).
+- Real terminal output from `ampoule release` (README.md).
+- The Linux binary, cross-packed from macOS, ran alone in a `FROM scratch` container; `docker stop`
+  shut it down cleanly in about 1 s.
+- Supabase Realtime, a large production Phoenix app, passed its own end-to-end suite (53/53) when
+  packed (`scripts/realtime.exs`, run before the rename).
+- Three examples with end-to-end suites: `examples/phoenix_ecto`, `examples/francis`,
+  `examples/rustler`; 22 tests in all (6, 9 and 7), all passing on 2026-10-13
+  (`scripts/examples.exs`).
+- Absent, and not to be implied: users, testimonials, company logos, download counts, benchmarks
+  against other tools.
+
+## Product Principles
+
+1. Show the mechanism, not adjectives: commands, output and numbers that were measured.
+2. The app stays a normal release; ampoule changes how it ships, not how it is written.
+3. Honest limits: what does not work is stated next to what does.
+4. One file is the unit of everything: install, run, deploy, cross-compile.

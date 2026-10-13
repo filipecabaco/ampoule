@@ -1,0 +1,13 @@
+# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+
+# `<binary> serve`: create/migrate the database, then start the app.
+serve = ["migrate", "start"]
+
+[commands]                 # `<binary> migrate` on its own works too
+migrate = "Notes.Release.migrate()"
+
+[start.env]                # defaults for `start`; the real environment wins
+PHX_SERVER = "true"
+
+[network]
+listen = [4000]            # the only port the app may bind; map it with --port-map 4000:8080

@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    uses: ./.github/workflows/engine.yml
+
+  # Lint, unit tests, the release binary, and the smoke test (test/fixture packed and checked).
+  test:
+    needs: engine
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine
+          path: build/engine
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: "1.99.0"
+          components: clippy, rustfmt
+          targets: wasm32-wasip1-threads
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: runner
+
+      - uses: erlef/setup-beam@v1.24.1
+        with:
+          otp-version: "28.5.0.4"
+          elixir-version: "1.19.5"
+
+      - name: Lint
+        working-directory: runner
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+
+      - name: Unit tests
+        working-directory: runner
+        run: cargo test
+
+      - name: Build
+        working-directory: runner
+        run: cargo build --release
+
+      - name: Fetch wasi-sdk (to build NIFs at pack time)
+        run: elixir scripts/engine.exs sdk
+
+      - name: Smoke test
+        run: elixir scripts/smoke.exs --network
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ampoule-${{ matrix.os }}
+          path: runner/target/release/ampoule
+          if-no-files-found: error
+
+  # Each example's end-to-end suite (examples/*/test/e2e) against the binary the test job built:
+  # pack the example, run the binary, test it from outside.
+  examples:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+        example: [francis, phoenix_ecto, rustler]
+        exclude:
+          # Needs Postgres, and macOS runners cannot run service containers.
+          - os: macos-15
+            example: phoenix_ecto
+    name: examples (${{ matrix.example }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    services:
+      postgres:
+        image: ${{ matrix.example == 'phoenix_ecto' && 'postgres:17' || '' }}
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      E2E_DATABASE_URL: ecto://postgres:postgres@127.0.0.1:5432
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine
+          path: build/engine
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ampoule-${{ matrix.os }}
+          path: runner/target/release
+
+      - name: Make the binary executable
+        run: chmod +x runner/target/release/ampoule
+
+      - uses: dtolnay/rust-toolchain@v1
+        if: matrix.example == 'rustler'
+        with:
+          toolchain: "1.99.0"
+          targets: wasm32-wasip1-threads
+
+      - uses: erlef/setup-beam@v1.24.1
+        with:
+          otp-version: "28.5.0.4"
+          elixir-version: "1.19.5"
+
+      - name: Fetch wasi-sdk (to build NIFs at pack time)
+        run: elixir scripts/engine.exs sdk
+
+      - name: End-to-end suite
+        run: elixir scripts/examples.exs ${{ matrix.example }}

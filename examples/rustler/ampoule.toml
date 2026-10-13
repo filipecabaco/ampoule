@@ -1,0 +1,4 @@
+# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+
+[commands]   # `<binary> demo` evaluates the expression
+demo = "IO.puts(TextKit.slugify(\"Hello from Rust, inside wasm!\"))"

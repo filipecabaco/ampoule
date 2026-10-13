@@ -1,0 +1,38 @@
+# Builds the engine (ERTS for wasm, and the kit NIFs are linked against) and uploads it as the
+# `engine` artifact. The engine is the same wasm for every platform, so it is built once, on Linux,
+# and reused from the cache until its inputs change.
+name: engine
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        id: cache
+        with:
+          path: build/engine
+          key: engine-${{ hashFiles('scripts/engine.exs', 'engine/**') }}
+
+      - uses: erlef/setup-beam@v1.24.1
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          otp-version: "28.5.0.4"
+          elixir-version: "1.19.5"
+
+      - name: Build the engine
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: elixir scripts/engine.exs
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: engine
+          path: build/engine
+          if-no-files-found: error
