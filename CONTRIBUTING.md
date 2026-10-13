@@ -74,8 +74,9 @@ and `SHA256SUMS`.
 | `runner/` | the `ampoule` crate |
 | `engine/patches/erts-wasi.patch` | changes to OTP's ERTS for WASI |
 | `engine/ampoule-os/` | the C support library and headers linked into ERTS and NIFs |
-| `scripts/` | `engine.exs`, `smoke.exs`, `examples.exs`, `realtime.exs` |
+| `scripts/` | `engine.exs`, `smoke.exs`, `examples.exs`, `realtime.exs`; `logo.exs` and `og.exs` for the brand assets |
 | `examples/` | example apps with end-to-end suites |
+| `site/` | the GitHub Pages site; `site/og.png` is rendered from `assets/og.html` by `scripts/og.exs` (rename it on a redesign: platforms cache it by URL) |
 | `test/fixture/` | the app `smoke.exs` packs |
 | `test/realtime/` | the config `realtime.exs` packs Realtime with |
 | `build/` | everything generated (not checked in) |

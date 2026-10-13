@@ -1,0 +1,180 @@
+<!doctype html>
+<!-- The social card for the site (site/og.png, 1200x630). Not published; render it with
+     `elixir scripts/og.exs`, which screenshots this page in headless Chrome. The commands are the
+     ones on the site; the look is the site's: an Elixir-purple cover beside the two steps. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ampoule og card</title>
+<style>
+  @font-face {
+    font-family: "Familjen Grotesk";
+    src: url("../site/fonts/familjen-grotesk-latin.woff2") format("woff2");
+    font-weight: 400 700;
+  }
+
+  @font-face {
+    font-family: "JetBrains Mono";
+    src: url("../site/fonts/jetbrains-mono-latin.woff2") format("woff2");
+    font-weight: 400 700;
+  }
+
+  :root {
+    --ink: #17181a;
+    --elixir: #4e2a8e;
+    --wasm: #654ff0;
+    --wash: #efeafa;
+  }
+
+  html, body {
+    margin: 0;
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    background: #fff;
+    color: var(--ink);
+    font-family: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .card {
+    display: grid;
+    grid-template-columns: 500px 1fr;
+    height: 630px;
+    box-sizing: border-box;
+    border-bottom: 6px solid var(--ink);
+  }
+
+  .cover {
+    background: var(--elixir);
+    color: #fff;
+    padding: 56px 52px 48px;
+    border-right: 6px solid var(--ink);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Two of the mark's tiles are Elixir purple, so it sits on a light plate. */
+  .plate {
+    align-self: flex-start;
+    background: var(--wash);
+    border-radius: 18px;
+    padding: 14px;
+    line-height: 0;
+  }
+
+  .plate img {
+    width: 96px;
+    height: 96px;
+  }
+
+  .name {
+    margin: 30px 0 0;
+    font-size: 108px;
+    font-weight: 700;
+    line-height: 0.85;
+    letter-spacing: -0.035em;
+  }
+
+  .claim {
+    margin: 26px 0 0;
+    font-size: 34px;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  .foot {
+    margin-top: auto;
+    font-size: 21px;
+    font-weight: 600;
+    color: var(--wash);
+  }
+
+  .steps {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 128px 1fr;
+    align-items: center;
+    gap: 34px;
+    padding: 0 52px;
+  }
+
+  .step + .step {
+    border-top: 6px solid var(--ink);
+  }
+
+  .no {
+    display: grid;
+    place-items: center;
+    width: 128px;
+    height: 128px;
+    border: 8px solid var(--ink);
+    border-radius: 50%;
+    box-sizing: border-box;
+    font-size: 84px;
+    font-weight: 700;
+    line-height: 1;
+    padding-bottom: 8px;
+  }
+
+  .step:last-child .no {
+    background: var(--wasm);
+    border-color: var(--wasm);
+    color: #fff;
+    transform: rotate(-8deg);
+  }
+
+  h2 {
+    margin: 0 0 16px;
+    font-size: 38px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  code {
+    display: block;
+    border: 3px solid var(--ink);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font: 500 23px/1.45 "JetBrains Mono", ui-monospace, monospace;
+    white-space: pre;
+  }
+
+  code b {
+    color: var(--elixir);
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <section class="cover">
+      <span class="plate"><img src="logo.svg" alt=""></span>
+      <h1 class="name">ampoule</h1>
+      <p class="claim">Pack an Elixir or Erlang release into one executable.</p>
+      <p class="foot">macOS and Linux · arm64 and x86_64 · Apache-2.0</p>
+    </section>
+    <section class="steps">
+      <div class="step">
+        <span class="no">1</span>
+        <div>
+          <h2>Pack your project.</h2>
+          <code><b>$</b> ampoule release</code>
+        </div>
+      </div>
+      <div class="step">
+        <span class="no">2</span>
+        <div>
+          <h2>Copy the one file. Run it.</h2>
+          <code><b>$</b> ./my_app-x86_64-linux start</code>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
