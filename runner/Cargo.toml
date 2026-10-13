@@ -22,7 +22,7 @@ wasmtime = { version = "49", default-features = false, features = ["anyhow", "cr
 zstd = "0.14"
 
 [build-dependencies]
-wasmtime = { version = "49", default-features = false, features = ["anyhow", "cranelift", "gc", "gc-drc", "threads", "parallel-compilation", "std", "runtime"] }
+wasmtime = { version = "49", default-features = false, features = ["anyhow", "cranelift", "all-arch", "gc", "gc-drc", "threads", "parallel-compilation", "std", "runtime"] }
 zstd = "0.14"
 
 [profile.release]
