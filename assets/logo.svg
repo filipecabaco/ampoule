@@ -1,34 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-labelledby="title">
   <title id="title">ampoule</title>
-  <defs>
-    <!-- Glass: violet, lighter toward the sealed end -->
-    <linearGradient id="glass" x1="0" y1="-56" x2="0" y2="56" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#7d45c4"/>
-      <stop offset="1" stop-color="#4b1d8c"/>
-    </linearGradient>
-    <!-- The dose: a beam of light along the axis, brightest at the neck -->
-    <linearGradient id="core" x1="0" y1="-50" x2="0" y2="50" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#fffaf0"/>
-      <stop offset="0.45" stop-color="#ffe7a8"/>
-      <stop offset="1" stop-color="#ffcf6e" stop-opacity="0.4"/>
-    </linearGradient>
-    <filter id="glow" x="-1" y="-0.2" width="3" height="1.4">
-      <feGaussianBlur stdDeviation="2.4"/>
-    </filter>
-    <!-- ISO 9187 form D: base, body, shoulder, bulb, constriction, stem, sealed tip -->
-    <path id="ampoule" d="M-17 48V-6C-17-14-6.5-14-6.5-20C-6.5-22-7-23-7-24.5C-7-26.5-4.5-27-4.5-28.5C-4.5-30-5.5-30.5-5.5-32V-47C-5.5-51-1.5-54 0-56C1.5-54 5.5-51 5.5-47V-32C5.5-30.5 4.5-30 4.5-28.5C4.5-27 7-26.5 7-24.5C7-23 6.5-22 6.5-20C6.5-14 17-14 17-6V48Q17 56 9 56H-9Q-17 56-17 48Z"/>
-    <clipPath id="inside"><use href="#ampoule"/></clipPath>
-  </defs>
-  <g transform="translate(64 64) rotate(20)">
-    <use href="#ampoule" fill="url(#glass)"/>
-    <g clip-path="url(#inside)">
-      <!-- glass sheen down the left wall -->
-      <rect x="-13" y="-8" width="3.5" height="58" rx="1.75" fill="#fff" opacity="0.16"/>
-      <!-- the beam: a soft glow in the body around a bright core that runs up the stem -->
-      <rect x="-5" y="-14" width="10" height="66" rx="5" fill="#ffd27a" opacity="0.4" filter="url(#glow)"/>
-      <rect x="-1.75" y="-50" width="3.5" height="98" rx="1.75" fill="url(#core)"/>
-    </g>
-    <!-- the colour break ring at the constriction -->
-    <rect x="-7.5" y="-30.25" width="15" height="3.5" rx="1.75" fill="#f2c14e"/>
+  <!-- 00 61 73 6D: the four bytes every WebAssembly module starts with, \0asm. -->
+  <g>
+    <rect x="3" y="3" width="58" height="58" rx="9" fill="#f2c14e"/>
+    <path d="M15 18L27 18 M29 20L29 30 M29 34L29 44 M15 46L27 46 M13 34L13 44 M13 20L13 30 M37 18L49 18 M51 20L51 30 M51 34L51 44 M37 46L49 46 M35 34L35 44 M35 20L35 30" fill="none" stroke="#17181a" stroke-width="4.5" stroke-linecap="round"/>
+    <rect x="67" y="3" width="58" height="58" rx="9" fill="#7a3a0b"/>
+    <path d="M79 18L91 18 M93 34L93 44 M79 46L91 46 M77 34L77 44 M77 20L77 30 M79 32L91 32 M115 20L115 30 M115 34L115 44" fill="none" stroke="#ffe7a8" stroke-width="4.5" stroke-linecap="round"/>
+    <rect x="3" y="67" width="58" height="58" rx="9" fill="#7a3a0b"/>
+    <path d="M15 82L27 82 M29 84L29 94 M29 98L29 108 M37 82L49 82 M51 84L51 94 M51 98L51 108 M37 110L49 110 M37 96L49 96" fill="none" stroke="#ffe7a8" stroke-width="4.5" stroke-linecap="round"/>
+    <rect x="67" y="67" width="58" height="58" rx="9" fill="#17181a"/>
+    <rect x="68.5" y="68.5" width="55" height="55" rx="7.5" fill="none" stroke="#f2c14e" stroke-width="1.5"/>
+    <path d="M79 82L91 82 M93 98L93 108 M79 110L91 110 M77 98L77 108 M77 84L77 94 M79 96L91 96 M115 84L115 94 M115 98L115 108 M101 110L113 110 M99 98L99 108 M101 96L113 96" fill="none" stroke="#f2c14e" stroke-width="4.5" stroke-linecap="round"/>
   </g>
 </svg>

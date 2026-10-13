@@ -1,9 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <title>ampoule</title>
-  <!-- The site's cut of the mark: amber glass, gold break ring, the beam left as light. -->
-  <g transform="translate(64 64) rotate(20)">
-    <path d="M-17 48V-6C-17-14-6.5-14-6.5-20C-6.5-22-7-23-7-24.5C-7-26.5-4.5-27-4.5-28.5C-4.5-30-5.5-30.5-5.5-32V-47C-5.5-51-1.5-54 0-56C1.5-54 5.5-51 5.5-47V-32C5.5-30.5 4.5-30 4.5-28.5C4.5-27 7-26.5 7-24.5C7-23 6.5-22 6.5-20C6.5-14 17-14 17-6V48Q17 56 9 56H-9Q-17 56-17 48Z" fill="#7a3a0b"/>
-    <rect x="-3.5" y="-48" width="7" height="94" rx="3.5" fill="#ffe7a8"/>
-    <rect x="-9" y="-31.5" width="18" height="6" rx="3" fill="#f2c14e"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-labelledby="title">
+  <title id="title">ampoule</title>
+  <!-- 00 61 73 6D: the four bytes every WebAssembly module starts with, \0asm. -->
+  <g>
+    <rect x="3" y="3" width="58" height="58" rx="9" fill="#f2c14e"/>
+    <path d="M15 18L27 18 M29 20L29 30 M29 34L29 44 M15 46L27 46 M13 34L13 44 M13 20L13 30 M37 18L49 18 M51 20L51 30 M51 34L51 44 M37 46L49 46 M35 34L35 44 M35 20L35 30" fill="none" stroke="#17181a" stroke-width="4.5" stroke-linecap="round"/>
+    <rect x="67" y="3" width="58" height="58" rx="9" fill="#7a3a0b"/>
+    <path d="M79 18L91 18 M93 34L93 44 M79 46L91 46 M77 34L77 44 M77 20L77 30 M79 32L91 32 M115 20L115 30 M115 34L115 44" fill="none" stroke="#ffe7a8" stroke-width="4.5" stroke-linecap="round"/>
+    <rect x="3" y="67" width="58" height="58" rx="9" fill="#7a3a0b"/>
+    <path d="M15 82L27 82 M29 84L29 94 M29 98L29 108 M37 82L49 82 M51 84L51 94 M51 98L51 108 M37 110L49 110 M37 96L49 96" fill="none" stroke="#ffe7a8" stroke-width="4.5" stroke-linecap="round"/>
+    <rect x="67" y="67" width="58" height="58" rx="9" fill="#17181a"/>
+    <rect x="68.5" y="68.5" width="55" height="55" rx="7.5" fill="none" stroke="#f2c14e" stroke-width="1.5"/>
+    <path d="M79 82L91 82 M93 98L93 108 M79 110L91 110 M77 98L77 108 M77 84L77 94 M79 96L91 96 M115 84L115 94 M115 98L115 108 M101 110L113 110 M99 98L99 108 M101 96L113 96" fill="none" stroke="#f2c14e" stroke-width="4.5" stroke-linecap="round"/>
   </g>
 </svg>

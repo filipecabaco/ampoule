@@ -63,12 +63,9 @@ function setupCopy() {
         await navigator.clipboard.writeText(source.textContent.trim());
         label.textContent = "Copied";
         icon.setAttribute("href", "#icon-check");
-        const band = button.closest("[data-band]");
-        if (band) {
-          band.classList.remove("snapped");
-          void band.offsetWidth;
-          band.classList.add("snapped");
-        }
+        // Copying a step's command marks that step done: its numeral fills gold.
+        const step = button.closest("[data-step]");
+        if (step) step.classList.add("is-done");
       } catch {
         // Clipboard refused (insecure context or permissions): select the text instead.
         const range = document.createRange();
@@ -86,5 +83,6 @@ function setupCopy() {
   });
 }
 
+document.documentElement.classList.add("js");
 setupTargets();
 setupCopy();

@@ -1,8 +1,6 @@
-<p align="center"><img src="assets/logo.svg" alt="ampoule logo: a glass ampoule with a beam of light sealed inside" width="128"></p>
+<p align="center"><img src="assets/logo.svg" alt="ampoule logo: the bytes 00 61 73 6D that open every WebAssembly module, as four tiles" width="128"></p>
 
 # ampoule
-
-An ampoule is a sealed glass vial holding a single dose; in French the word also means light bulb.
 
 ampoule turns a Mix project into one executable file. Copy the file to a Mac or a Linux machine
 and run it: the machine needs no Erlang, no Elixir and no shared libraries.

@@ -1,878 +1,638 @@
-/* ampoule: the package insert. Contrast of every text pair is AA or better (measured). */
+/* ampoule: the assembly sheet. A long parts inventory, two steps. */
 
 @font-face {
-  font-family: "Archivo";
-  src: url("fonts/archivo-latin.woff2") format("woff2");
-  font-weight: 100 900;
-  font-stretch: 62% 125%;
+  font-family: "Familjen Grotesk";
+  src: url("fonts/familjen-grotesk-latin.woff2") format("woff2");
+  font-weight: 400 700;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Martian Mono";
-  src: url("fonts/martian-mono-latin.woff2") format("woff2");
-  font-weight: 300 600;
-  font-stretch: 75% 112.5%;
+  font-family: "JetBrains Mono";
+  src: url("fonts/jetbrains-mono-latin.woff2") format("woff2");
+  font-weight: 400 700;
   font-display: swap;
 }
 
 :root {
-  --paper: #f6f5f1;
+  --paper: #ffffff;
   --ink: #17181a;
-  --ink-2: #55524b;
-  --rule: #c9c4b8;
-  --warn: #a3261b;
-  --amber: #7a3a0b;
-  --amber-ink: #fbf1e1;
-  --amber-ink-2: #f1cfa4;
-  --beam: #ffe7a8;
+  --ink-soft: #4b4c4f;
   --gold: #f2c14e;
-  --code-ground: #1d1b17;
-  --code-ink: #ece7dc;
-  --code-dim: #a8a093;
+  --beam: #ffe7a8;
+  --amber: #7a3a0b;
 
-  --sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
-  --mono: "Martian Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --step--1: 0.875rem;
-  --step-0: 1.0625rem;
-  --step-1: 1.25rem;
-  --step-2: 1.6rem;
-  --space: clamp(1.25rem, 2.5vw, 2.25rem);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --gutter: clamp(1rem, 4vw, 3rem);
+  --line: 3px;
+  --hair: 1.5px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   color-scheme: light;
-  accent-color: var(--amber);
-  scrollbar-color: var(--amber) var(--paper);
+  accent-color: var(--ink);
+  scrollbar-color: var(--ink) var(--paper);
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+*, *::before, *::after { box-sizing: border-box; }
 
-html {
-  scroll-behavior: smooth;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-}
+html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
 
 body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: var(--step-0);
+  font-size: 1.0625rem;
   line-height: 1.55;
   font-variant-numeric: tabular-nums;
-  caret-color: var(--amber);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-::selection {
-  background: var(--gold);
-  color: var(--ink);
-}
+::selection { background: var(--gold); color: var(--ink); }
 
 a {
-  color: var(--amber);
-  text-decoration-thickness: 1px;
+  color: inherit;
+  text-decoration-thickness: 1.5px;
   text-underline-offset: 0.2em;
+  text-decoration-color: var(--amber);
 }
 
-a:hover {
-  text-decoration-thickness: 2px;
-}
+a:hover { text-decoration-thickness: 3px; text-decoration-color: var(--gold); }
 
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 3px solid var(--ink);
   outline-offset: 3px;
+  box-shadow: 0 0 0 7px var(--gold);
   border-radius: 2px;
 }
 
-code {
-  font-family: var(--mono);
-  font-size: 0.86em;
-  font-stretch: 87.5%;
+code, pre { font-family: var(--mono); font-size: 0.86em; }
+
+:not(pre) > code {
+  background: var(--beam);
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
 }
 
-.defs {
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p, ul, ol { margin: 0; }
+
+.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.visually-hidden {
   position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .skip {
   position: absolute;
-  left: 1rem;
+  left: var(--gutter);
   top: -4rem;
   z-index: 10;
+  background: var(--ink);
+  color: var(--paper);
   padding: 0.6rem 1rem;
-  background: var(--gold);
-  color: var(--ink);
-  font-weight: 600;
+  font-weight: 650;
 }
 
-.skip:focus {
-  top: 1rem;
+.skip:focus { top: 1rem; }
+
+/* Masthead: the part-number strip at the top of the sheet. */
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  flex-wrap: wrap;
+  padding: 1.1rem var(--gutter);
+  border-bottom: var(--line) solid var(--ink);
 }
 
-/* ---------------------------------------------------------------- the opened box */
+.masthead-id { display: inline-flex; align-items: center; gap: 0.8rem; text-decoration: none; }
 
-.opened {
+.mark { width: 2.5rem; height: 2.5rem; flex: none; }
+
+.part-no { font-family: var(--mono); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.04em; }
+
+.masthead-nav { display: flex; flex-wrap: wrap; gap: 0.4rem 1.6rem; font-weight: 600; font-size: 0.95rem; }
+
+.masthead-nav a {
+  text-decoration: none;
+  padding-block: 0.25rem;
+  border-bottom: var(--line) solid transparent;
+}
+
+.masthead-nav a:hover { border-bottom-color: var(--gold); }
+
+/* Sheet one: the inventory on the left, the two steps on the right. */
+
+.sheet-one {
   display: grid;
-  grid-template-columns: minmax(0, 45fr) minmax(0, 55fr);
-  /* The box opens to the screen, but a very tall screen does not stretch the carton. */
-  min-height: min(100vh, 58rem);
-  min-height: min(100svh, 58rem);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.35fr);
+  border-bottom: var(--line) solid var(--ink);
 }
 
-/* The carton: one amber field, printed in one ink, with a gold band. */
-
-.carton {
-  position: relative;
+.cover {
+  padding: clamp(2rem, 4vw, 3.5rem) var(--gutter);
+  border-right: var(--line) solid var(--ink);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  padding: var(--space) var(--space) calc(var(--space) * 1.2);
-  background: var(--amber);
-  color: var(--amber-ink);
-  box-shadow: 18px 0 40px -18px rgb(23 24 26 / 0.45);
-  z-index: 1;
+  gap: 1.5rem;
 }
 
-.carton :focus-visible {
-  outline-color: var(--beam);
+.name {
+  font-size: clamp(4rem, 9vw, 6rem);
+  font-weight: 700;
+  line-height: 0.85;
+  letter-spacing: -0.035em;
 }
 
-.carton a {
-  color: var(--beam);
-}
-
-.carton-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.stamp {
-  width: 3.25rem;
-  height: 3.25rem;
-  color: var(--beam);
-}
-
-.carton-link {
-  font-size: var(--step--1);
+.claim {
+  font-size: clamp(1.35rem, 2.2vw, 1.75rem);
+  line-height: 1.2;
   font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.carton-name {
-  margin: clamp(1rem, 6vh, 3.5rem) 0 0;
-  font-size: clamp(4.5rem, 12.5vw, 6rem);
-  font-stretch: 78%;
-  font-weight: 880;
-  line-height: 0.82;
-  letter-spacing: -0.03em;
-  color: var(--amber-ink);
-}
-
-.carton-claim {
-  margin: 0;
+  letter-spacing: -0.01em;
   max-width: 22ch;
-  font-size: var(--step-2);
-  font-stretch: 85%;
-  font-weight: 650;
-  line-height: 1.12;
-  text-wrap: balance;
 }
 
-.carton-sub {
-  margin: 0;
-  max-width: 40ch;
-  color: var(--amber-ink-2);
-  text-wrap: pretty;
-}
+.inventory { margin-top: auto; padding-top: 1rem; }
 
-/* The gold band, the break ring: the page's one primary action. */
+.inventory-title { font-size: 0.95rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 0.75rem; }
 
-.band {
+.parts { list-style: none; padding: 0; display: grid; gap: 0.45rem; }
+
+.parts li,
+.the-part {
   position: relative;
-  margin-inline: calc(var(--space) * -1);
-  padding: 1rem var(--space) 1.1rem;
-  background: var(--gold);
-  color: var(--ink);
+  display: grid;
+  grid-template-columns: 2.2rem 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.5rem 0.75rem 0.5rem 0.5rem;
+  border: var(--hair) solid var(--ink);
+  border-radius: 4px;
 }
 
-/* The beam: one gold line carried out of the band, across the seam, toward section 1. */
-.band::after {
+.parts li { color: var(--ink-soft); }
+
+.part-letter {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: var(--hair) solid currentColor;
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.part-name { font-weight: 600; }
+
+.qty { font-family: var(--mono); font-weight: 700; font-size: 0.9rem; }
+
+/* The strike: one heavy line drawn through each part a deploy no longer needs. */
+.parts li::after {
   content: "";
   position: absolute;
-  left: 100%;
+  left: 0.35rem;
+  right: 0.35rem;
   top: 50%;
-  width: calc(var(--space) * 1.15);
   height: 3px;
   margin-top: -1.5px;
-  background: linear-gradient(to right, var(--gold) 55%, rgb(242 193 78 / 0));
-  pointer-events: none;
-}
-
-.ring {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 3px;
   background: var(--ink);
-  transform-origin: left;
-  transform: scaleX(0);
+  border-radius: 2px;
+  transform-origin: left center;
+  transform: rotate(-2.5deg);
 }
 
-.band.snapped .ring {
-  animation: snap 0.9s var(--ease-out);
+.js .parts li::after { animation: strike 0.55s var(--ease) backwards; }
+.js .parts li:nth-child(1)::after { animation-delay: 0.35s; }
+.js .parts li:nth-child(2)::after { animation-delay: 0.5s; }
+.js .parts li:nth-child(3)::after { animation-delay: 0.65s; }
+.js .parts li:nth-child(4)::after { animation-delay: 0.8s; }
+.js .parts li:nth-child(5)::after { animation-delay: 0.95s; }
+
+@keyframes strike {
+  from { transform: rotate(-2.5deg) scaleX(0); }
 }
 
-@keyframes snap {
-  0% {
-    transform: scaleX(0);
-  }
-  45% {
-    transform: scaleX(1);
-  }
-  100% {
-    transform: scaleX(1);
-    opacity: 0;
-  }
+.the-part {
+  margin-top: 1rem;
+  grid-template-columns: 2.6rem 1fr auto;
+  padding: 0.75rem 0.9rem 0.75rem 0.6rem;
+  border-width: var(--line);
+  background: var(--beam);
+}
+
+.js .the-part { animation: arrive 0.7s 1.25s var(--ease) backwards; }
+
+@keyframes arrive {
+  from { box-shadow: 0 0 0 10px var(--gold); }
+  to { box-shadow: 0 0 0 0 var(--gold); }
+}
+
+.the-part .mark { width: 2.6rem; height: 2.6rem; }
+
+.the-part .part-name {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.part-desc { display: block; font-size: 0.9rem; line-height: 1.35; margin-top: 0.15rem; }
+
+/* The steps. */
+
+.steps { list-style: none; padding: 0; margin: 0; display: grid; }
+
+.step {
+  display: grid;
+  grid-template-columns: clamp(8rem, 13vw, 11rem) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  column-gap: clamp(1rem, 2.5vw, 2rem);
+  padding: clamp(1.75rem, 3vw, 2.5rem) var(--gutter);
+}
+
+.step + .step { border-top: var(--line) solid var(--ink); }
+
+.step-no {
+  display: grid;
+  place-items: center;
+  width: 4.75rem;
+  height: 4.75rem;
+  border: 4px solid var(--ink);
+  border-radius: 50%;
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  padding-bottom: 0.1em;
+  transition: background-color 0.4s var(--ease), transform 0.4s var(--ease);
+}
+
+.step.is-done .step-no { background: var(--gold); transform: rotate(-8deg); }
+
+.picto {
+  grid-column: 1;
+  grid-row: 2;
+  width: 100%;
+  max-width: 11rem;
+  margin-top: 1.25rem;
+  overflow: visible;
+}
+
+.picto .ink-fill { fill: var(--ink); }
+.picto .gold-fill { fill: var(--gold); }
+
+.picto .body,
+.picto .limb,
+.picto .line,
+.picto .gold-stroke { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+.picto .body { stroke: var(--ink); stroke-width: 18; }
+.picto .limb { stroke: var(--ink); stroke-width: 10; }
+.picto .line { stroke: var(--ink); stroke-width: 4; }
+.picto .heavy { stroke-width: 7; }
+.picto .box { fill: var(--paper); }
+.picto .dash { stroke-dasharray: 2 9; }
+.picto .gold-stroke { stroke: var(--amber); stroke-width: 4; }
+
+.step-body {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.step-title {
+  font-size: clamp(1.45rem, 2.4vw, 1.9rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin-top: 0.6rem;
 }
 
 .targets {
+  border: 0;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  margin: 0 0 0.75rem;
-  padding: 0;
-  border: 0;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .targets legend {
   float: left;
-  margin-right: 0.5rem;
-  padding: 0.3rem 0;
-  font-size: var(--step--1);
-  font-weight: 650;
+  margin-right: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink-soft);
 }
 
-.targets label {
-  position: relative;
-}
+.targets label { position: relative; }
 
-.targets input {
-  position: absolute;
-  opacity: 0;
-  inset: 0;
-  margin: 0;
-  cursor: pointer;
-}
+.targets input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 
 .targets span {
-  display: block;
-  padding: 0.3rem 0.65rem;
-  border: 1px solid rgb(23 24 26 / 0.55);
+  display: inline-block;
+  padding: 0.3rem 0.75rem;
+  border: var(--hair) solid var(--ink);
   border-radius: 999px;
-  font-size: var(--step--1);
+  font-size: 0.88rem;
   font-weight: 600;
-  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.2s var(--ease);
 }
 
-.targets input:checked + span {
-  background: var(--ink);
-  color: var(--gold);
-  border-color: var(--ink);
-}
+.targets label:hover span { background: var(--beam); }
+.targets input:checked + span { background: var(--ink); color: var(--paper); }
 
 .targets input:focus-visible + span {
-  outline: 2px solid var(--ink);
+  outline: 3px solid var(--ink);
   outline-offset: 2px;
+  box-shadow: 0 0 0 7px var(--gold);
 }
 
-.targets label:hover span {
-  border-color: var(--ink);
-}
-
-.install {
+/* A command plate: an ink rule, a paper ground, the copy control docked on its edge. */
+.plate {
   display: flex;
   align-items: stretch;
-  gap: 0.6rem;
+  border: var(--hair) solid var(--ink);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.install-cmd {
-  flex: 1;
-  min-width: 0;
+.cmd {
   margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.6;
-  /* Lines wrap only at spaces and at the <wbr> after each "/" of the base URL, never mid-word,
-     so the whole command, the target's asset name included, is always on screen. */
+  padding: 0.85rem 1rem;
+  font-size: 0.82rem;
+  line-height: 1.7;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
 }
 
-.install-cmd .token {
-  white-space: nowrap;
-}
+.plate .cmd { flex: 1; min-width: 0; }
 
-.install-cmd code {
-  font-size: 1em;
-}
+.cmd .p { color: var(--amber); font-weight: 700; user-select: none; }
+.cmd .o { color: var(--ink-soft); }
+.cmd .token { white-space: nowrap; font-weight: 700; }
 
 .copy {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  align-self: flex-start;
-  padding: 0.55rem 0.9rem;
+  padding: 0 1rem;
   border: 0;
-  border-radius: 6px;
-  background: var(--ink);
-  color: var(--gold);
-  font: 650 var(--step--1) / 1 var(--sans);
-  cursor: pointer;
-  transition: transform 0.15s var(--ease-out);
-}
-
-.copy svg {
-  width: 1.05rem;
-  height: 1.05rem;
-}
-
-.copy:active {
-  transform: translateY(1px);
-}
-
-.copy:focus-visible {
-  outline-color: var(--ink);
-}
-
-.carton-note {
-  margin: -0.4rem 0 0;
-  font-size: var(--step--1);
-  color: var(--amber-ink-2);
-}
-
-/* Printed like the lot and batch block on a carton's flap. */
-.carton-stamps {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.6rem 1.25rem;
-  align-self: flex-start;
-  width: min(100%, 26rem);
-  margin: 0.25rem 0 0;
-  padding: 0.85rem 1rem;
-  border: 1px solid rgb(251 241 225 / 0.7);
-  border-radius: 3px;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  font-stretch: 87.5%;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.carton-stamps .wide {
-  grid-column: 1 / -1;
-}
-
-.carton-stamps dt {
-  color: var(--amber-ink-2);
-}
-
-.carton-stamps dd {
-  margin: 0;
-  font-weight: 600;
-}
-
-/* ---------------------------------------------------------------- the leaflet */
-
-.leaflet-first {
-  position: relative;
-  padding: var(--space) var(--space) calc(var(--space) * 1.5) calc(var(--space) * 1.4);
-  background: var(--paper);
-}
-
-.leaflet-title {
-  margin: 0;
-  max-width: 30ch;
-  font-size: var(--step-2);
-  font-stretch: 90%;
-  font-weight: 750;
-  line-height: 1.15;
-  text-wrap: balance;
-}
-
-.leaflet-product {
-  margin: 0.4rem 0 0;
-  font-weight: 600;
-}
-
-.leaflet-intro {
-  margin: 1rem 0 0;
-  max-width: 58ch;
-  color: var(--ink-2);
-}
-
-.contents {
-  margin: 1.5rem 0 0;
-  padding: 1rem 0;
-  border-block: 1px solid var(--rule);
-}
-
-.contents h3 {
-  margin: 0 0 0.5rem;
-  font-size: var(--step-0);
-  font-weight: 700;
-}
-
-.contents ol {
-  margin: 0;
-  padding-left: 1.4rem;
-  columns: 2 16rem;
-  column-gap: 2rem;
-}
-
-.contents li {
-  break-inside: avoid;
-  padding: 0.1rem 0;
-}
-
-.section h2 {
-  margin: 2.75rem 0 0.9rem;
-  font-size: 1.5rem;
-  font-weight: 750;
-  line-height: 1.25;
-  text-wrap: balance;
-}
-
-.section h3 {
-  margin: 1.75rem 0 0.5rem;
-  font-size: var(--step-0);
-  font-weight: 700;
-}
-
-.section p,
-.section li {
-  max-width: 68ch;
-  text-wrap: pretty;
-}
-
-.section ul {
-  margin: 0.5rem 0;
-  padding-left: 1.2rem;
-}
-
-.section li + li {
-  margin-top: 0.4rem;
-}
-
-.warn li::marker {
-  color: var(--warn);
-}
-
-.warn {
-  color: var(--ink);
-}
-
-.term {
-  margin: 1rem 0;
-  padding: 1rem 1.15rem;
-  overflow-x: auto;
-  border-radius: 8px;
-  background: var(--code-ground);
-  color: var(--code-ink);
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  font-stretch: 87.5%;
-  line-height: 1.7;
-  box-shadow: 0 10px 30px -14px rgb(23 24 26 / 0.5);
-  scrollbar-color: var(--code-dim) var(--code-ground);
-}
-
-.term code {
-  font-size: 1em;
-}
-
-/* In the narrow leaflet panels a command wraps rather than hiding its end. */
-.panel .term {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.term .p {
-  color: var(--gold);
-  user-select: none;
-}
-
-.term .o {
-  color: var(--code-dim);
-}
-
-.term ::selection {
-  background: var(--gold);
-  color: var(--code-ground);
-}
-
-/* ---------------------------------------------------------------- the unfolded sheet */
-
-.sheet {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--rule);
-}
-
-/* The last panel is the wide back page of the leaflet. */
-.sheet > #contents {
-  grid-column: span 2;
-}
-
-.sheet > #store {
-  border-left: 0;
-  box-shadow: none;
-}
-
-@media (max-width: 80rem) {
-  .sheet {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .sheet > #contents {
-    grid-column: span 1;
-  }
-
-  .sheet > #effects,
-  .sheet > #contents {
-    border-left: 0;
-    box-shadow: none;
-  }
-
-  .sheet > #store {
-    border-left: 1px solid rgb(255 255 255 / 0.9);
-    box-shadow:
-      -1px 0 0 rgb(23 24 26 / 0.16),
-      inset 2rem 0 1.75rem -1.75rem rgb(23 24 26 / 0.13);
-  }
-}
-
-/* Each panel after the first in a row meets the previous one at a fold: a dark seam, the lit
-   edge of the paper beside it, and the shade of the valley falling into the panel. */
-.panel {
-  position: relative;
-  padding: 0 var(--space) calc(var(--space) * 1.5);
-  background: var(--paper);
-  border-left: 1px solid rgb(255 255 255 / 0.9);
-  box-shadow:
-    -1px 0 0 rgb(23 24 26 / 0.16),
-    inset 2rem 0 1.75rem -1.75rem rgb(23 24 26 / 0.13);
-}
-
-.panel:first-child {
-  border-left: 0;
-  box-shadow: none;
-}
-
-.measured {
-  width: 100%;
-  margin: 0.5rem 0 0;
-  border-collapse: collapse;
-  font-size: var(--step--1);
-}
-
-.measured th,
-.measured td {
-  padding: 0.6rem 0;
-  border-bottom: 1px solid var(--rule);
-  vertical-align: top;
-}
-
-.measured th {
-  font-weight: 500;
-  text-align: left;
-  padding-right: 1rem;
-}
-
-.measured td {
-  font-family: var(--mono);
-  font-stretch: 87.5%;
-  font-weight: 600;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.measured .aside {
-  display: block;
-  font-family: var(--sans);
-  font-weight: 400;
-  color: var(--ink-2);
-}
-
-.layout {
-  margin: 1rem 0 1.25rem;
-}
-
-.layout-bar {
-  display: flex;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border: 1px solid var(--ink);
-  border-radius: 6px;
-  overflow: hidden;
-  font-size: 0.78rem;
-  font-weight: 650;
-}
-
-.seg {
-  display: flex;
-  align-items: flex-end;
-  min-height: 4.5rem;
-  padding: 0.5rem;
-  border-left: 1px solid var(--ink);
-}
-
-.seg:first-child {
-  border-left: 0;
-}
-
-.seg span {
-  line-height: 1.2;
-}
-
-.seg-runtime {
-  flex: 3;
-  background: var(--amber);
-  color: var(--amber-ink);
-}
-
-.seg-image {
-  flex: 4;
-  background: var(--gold);
-}
-
-.seg-engine {
-  flex: 2.5;
-  background: repeating-linear-gradient(-45deg, var(--paper) 0 6px, #ebe7dc 6px 12px);
-}
-
-.seg-manifest {
-  flex: 1.4;
-}
-
-.seg-trailer {
-  flex: 1;
+  border-left: var(--hair) solid var(--ink);
   background: var(--ink);
   color: var(--paper);
+  font: 650 0.9rem/1 var(--sans);
+  cursor: pointer;
+  transition: background-color 0.2s var(--ease), color 0.2s var(--ease);
 }
 
-.layout figcaption {
-  margin-top: 0.75rem;
-  max-width: 68ch;
-  font-size: var(--step--1);
-  color: var(--ink-2);
+.copy svg { width: 1.1rem; height: 1.1rem; }
+.copy:hover { background: var(--gold); color: var(--ink); }
+.copy:active { transform: translateY(1px); }
+.copy:focus-visible { outline-offset: -5px; outline-color: var(--gold); box-shadow: none; }
+
+.note { font-size: 0.9rem; color: var(--ink-soft); }
+
+.done { display: flex; align-items: center; gap: 0.6rem; font-size: 1.15rem; font-weight: 700; }
+.done svg { width: 2.25rem; height: 2.25rem; flex: none; }
+
+/* Proof: the real output, laid on the sheet. */
+
+.proof { padding: clamp(2.5rem, 5vw, 4rem) var(--gutter); border-bottom: var(--line) solid var(--ink); }
+
+.specimen { margin: 0 auto; max-width: 62rem; display: grid; gap: 1rem; }
+
+.specimen .cmd {
+  border: var(--line) solid var(--ink);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  font-size: 0.85rem;
+  white-space: pre;
+  overflow-wrap: normal;
 }
 
-.facts {
-  margin: 0;
+.specimen figcaption { max-width: 68ch; color: var(--ink-soft); font-size: 0.95rem; }
+
+/* Later sheets. */
+
+.more, .rules, .exploded, .specs {
+  padding: clamp(3rem, 6vw, 5rem) var(--gutter);
+  border-bottom: var(--line) solid var(--ink);
 }
 
-.facts div {
+.sheet-title {
+  font-size: clamp(1.9rem, 4vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin-bottom: clamp(1.75rem, 3vw, 2.5rem);
+}
+
+.more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 clamp(2rem, 5vw, 4rem); }
+.more .sheet-title { grid-column: 1 / -1; }
+
+.step-page {
   display: grid;
-  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
-  gap: 1rem;
-  padding: 0.55rem 0;
-  border-bottom: 1px solid var(--rule);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.25rem;
+  padding-block: 1.75rem;
+  border-top: var(--hair) solid var(--ink);
 }
 
-.facts dt {
-  font-weight: 650;
+.step-page > div { display: grid; gap: 0.85rem; align-content: start; min-width: 0; }
+.step-page h3 { font-size: 1.3rem; font-weight: 700; line-height: 1.2; margin-top: 0.35rem; }
+.step-page p { max-width: 62ch; }
+.step-page .cmd { border: var(--hair) solid var(--ink); border-radius: 6px; }
+
+.step-no.small { width: 3.25rem; height: 3.25rem; border-width: 3px; font-size: 1.85rem; }
+
+.rules-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: var(--line) solid var(--ink);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.facts dd {
-  margin: 0;
-}
+.rule-col { padding: clamp(1.25rem, 3vw, 2rem); }
+.rule-col + .rule-col { border-left: var(--line) solid var(--ink); }
+.rule-col:first-child { background: var(--beam); }
 
-.revised {
-  margin-top: 1.5rem;
-  font-size: var(--step--1);
-  color: var(--ink-2);
-}
-
-/* ---------------------------------------------------------------- the carton's bottom flap */
-
-.flap {
-  background: var(--amber);
-  color: var(--amber-ink);
-  padding: calc(var(--space) * 1.5) var(--space) var(--space);
-}
-
-.flap a {
-  color: var(--beam);
-}
-
-.flap :focus-visible {
-  outline-color: var(--beam);
-}
-
-.flap-inner {
+.rule-col h3 {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.rule-icon { width: 2.5rem; height: 2.5rem; flex: none; }
+
+.rule-col ul, .aside-list { padding-left: 1.2rem; display: grid; gap: 0.65rem; }
+.rule-col li::marker, .aside-list li::marker { color: var(--amber); }
+
+.aside-title { font-size: 1.15rem; font-weight: 700; margin: 2.25rem 0 0.85rem; }
+.aside-list { max-width: 75ch; color: var(--ink-soft); }
+
+/* Exploded view of the file: the bar pulled apart, one callout per section. */
+
+.exploded figure { margin: 0; }
+
+.file {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1.6fr 3fr 1.6fr 0.9fr 0.8fr;
+  gap: 0.75rem;
+}
+
+.seg { display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+
+.seg::before {
+  content: "";
+  display: block;
+  height: 3.25rem;
+  border: var(--line) solid var(--ink);
+  border-radius: 4px;
+}
+
+.seg-runtime::before { background: var(--ink); }
+.seg-image::before { background: var(--gold); }
+.seg-engine::before { background: var(--amber); }
+.seg-manifest::before { background: var(--beam); }
+.seg-trailer::before { background: var(--paper); }
+
+.callout {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 2.5px solid var(--ink);
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.seg-name { font-weight: 700; line-height: 1.2; }
+.seg-desc { font-size: 0.92rem; color: var(--ink-soft); line-height: 1.45; }
+
+/* Specifications. */
+
+.specs table { width: 100%; max-width: 62rem; border-collapse: collapse; }
+
+.specs th, .specs td {
+  padding: 0.85rem 0;
+  border-bottom: var(--hair) solid var(--ink);
+  vertical-align: baseline;
+}
+
+.specs tr:first-child th, .specs tr:first-child td { border-top: var(--line) solid var(--ink); }
+
+.specs th { text-align: left; font-weight: 500; padding-right: 2rem; }
+
+.specs td { text-align: right; font-size: 1.35rem; font-weight: 700; white-space: nowrap; }
+.specs td.text { font-size: 1rem; font-weight: 600; white-space: normal; }
+.specs .aside { display: block; font-size: 0.85rem; font-weight: 500; color: var(--ink-soft); }
+
+/* Back cover. */
+
+.back { padding: clamp(3rem, 6vw, 5rem) var(--gutter) 2rem; display: grid; gap: 3rem; }
+
+.back-cmd {
+  display: grid;
+  grid-template-columns: auto minmax(0, 32rem);
   align-items: center;
   gap: 1rem 1.5rem;
 }
 
-.flap-dose {
-  margin: 0;
-  font-size: clamp(2rem, 5vw, 3.5rem);
-  font-stretch: 70%;
-  font-weight: 820;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
+.back-cmd .plate { border-width: var(--line); }
+.back-cmd .cmd { font-size: 1.15rem; padding: 1rem 1.25rem; }
+.back-install { grid-column: 2; font-weight: 600; }
 
-.flap-cmd {
-  margin: 0;
-  padding: 0.75rem 1.1rem;
-  border-radius: 6px;
-  background: var(--gold);
-  color: var(--ink);
-  font-size: 1.05rem;
-}
-
-.flap-install {
-  flex-basis: 100%;
-  font-size: var(--step--1);
-  font-weight: 600;
-}
-
-.copy-on-amber {
-  align-self: center;
-  background: var(--beam);
-  color: var(--ink);
-}
-
-.copy-on-amber:focus-visible {
-  outline-color: var(--beam);
-}
-
-.flap-links {
+.back-links {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 1.5rem;
-  margin: calc(var(--space) * 1.5) 0 0;
-  padding-top: 1rem;
-  border-top: 1px solid rgb(251 241 225 / 0.35);
-  font-size: var(--step--1);
+  gap: 0.75rem 1.5rem;
+  padding-top: 1.5rem;
+  border-top: var(--line) solid var(--ink);
   font-weight: 600;
 }
 
-.stamp-small {
-  width: 1.75rem;
-  height: 1.75rem;
-}
+.back-links .mark { width: 2rem; height: 2rem; }
+.back-links .part-no { margin-right: auto; }
 
-/* ---------------------------------------------------------------- the leaflet unfolds */
+/* Narrow sheets. */
 
-@media (prefers-reduced-motion: no-preference) {
-  @supports (animation-timeline: view()) {
-    .panel {
-      transform-origin: top center;
-      animation: unfold linear both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 70%;
-    }
-
-    @keyframes unfold {
-      from {
-        transform: perspective(1600px) rotateX(-14deg);
-        filter: brightness(0.94);
-      }
-      to {
-        transform: none;
-        filter: none;
-      }
-    }
-  }
-}
-
-/* ---------------------------------------------------------------- narrow screens */
-
-@media (max-width: 56rem) {
-  .sheet {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sheet > * {
-    grid-column: auto !important;
-  }
-
-  .opened {
-    grid-template-columns: minmax(0, 1fr);
-    min-height: 0;
-  }
-
-  .carton {
-    box-shadow: 0 18px 40px -18px rgb(23 24 26 / 0.45);
-  }
-
-  .carton-name {
-    margin-top: 1.5rem;
-  }
-
-  .band::after {
-    display: none;
-  }
-
-  .leaflet-first {
-    padding-left: var(--space);
-  }
-
-  .sheet > .panel {
-    border-left: 0;
-    border-top: 1px solid rgb(255 255 255 / 0.9);
-    box-shadow:
-      0 -1px 0 rgb(23 24 26 / 0.16),
-      inset 0 2rem 1.75rem -1.75rem rgb(23 24 26 / 0.13);
-  }
-
-  .sheet > .panel:first-child {
-    border-top: 0;
-    box-shadow: none;
-  }
-
-  .facts div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.15rem;
-  }
+@media (max-width: 1020px) {
+  .sheet-one { grid-template-columns: 1fr; }
+  .cover { border-right: 0; border-bottom: var(--line) solid var(--ink); }
+  .more { grid-template-columns: 1fr; }
+  .file { grid-template-columns: 1fr; }
 
   .seg {
-    min-height: 3.5rem;
-    font-size: 0.7rem;
+    display: grid;
+    grid-template-columns: 4rem 2rem minmax(0, 1fr);
+    column-gap: 0.85rem;
+    row-gap: 0.2rem;
   }
+
+  .seg::before { grid-row: 1 / span 2; height: 100%; min-height: 3.25rem; }
+  .callout { grid-row: 1 / span 2; }
+  .seg-name, .seg-desc { grid-column: 3; }
 }
 
-@media (max-width: 30rem) {
-  .layout-bar {
-    flex-direction: column;
-  }
+@media (max-width: 640px) {
+  .masthead-nav a:not(:last-child) { display: none; }
 
-  .seg {
-    min-height: 0;
-    border-left: 0;
-    border-top: 1px solid var(--ink);
-  }
+  .step { grid-template-columns: 1fr; grid-template-rows: auto; }
+  .step .step-no { width: 3.75rem; height: 3.75rem; font-size: 2.3rem; }
+  .picto { display: none; }
+  .step-body { grid-column: 1; grid-row: auto; }
 
-  .seg:first-child {
-    border-top: 0;
-  }
+  .rules-grid { grid-template-columns: 1fr; }
+  .rule-col + .rule-col { border-left: 0; border-top: var(--line) solid var(--ink); }
 
-  .install {
-    flex-direction: column;
+  .specs th, .specs td { display: block; text-align: left; padding: 0; border: 0; }
+  .specs tr { display: block; padding: 0.75rem 0; border-bottom: var(--hair) solid var(--ink); }
+  .specs tr:first-child { border-top: var(--line) solid var(--ink); }
+  .specs tr:first-child th, .specs tr:first-child td { border-top: 0; }
+  .specs td { white-space: normal; }
+
+  .back-cmd { grid-template-columns: 1fr; }
+  .back-install { grid-column: 1; }
+
+  .specimen .cmd { padding: 1rem; font-size: 0.78rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }
