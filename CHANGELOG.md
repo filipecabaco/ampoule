@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-13
+
+First release: pack an Erlang/Elixir release into one binary per platform, with NIFs rebuilt for
+wasm at pack time.
+
 ### Changed
 
 - Renamed from beam-wasm to ampoule: the binary, `ampoule.toml`, the `AMPOULE_*` environment variables,
@@ -53,8 +58,3 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Each run left its private `/tmp` behind in `$TMPDIR`. It is now removed on exit (kept if it holds
   a crash dump), and directories left by killed runs are removed on the next start.
 - `<binary> info | head` panicked on the closed pipe.
-
-## [0.1.0]
-
-- First version: pack an Erlang/Elixir release into one binary per platform, with NIFs rebuilt for
-  wasm at pack time.

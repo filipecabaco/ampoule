@@ -121,10 +121,13 @@ Download the archive for your machine from the [releases page](https://github.co
 NIF kit (`kit/`) and the license. Keep `kit/` next to `ampoule`.
 
 ```sh
-tar -xzf ampoule-<version>-aarch64-darwin.tar.gz
-export PATH="$PWD/ampoule-<version>-aarch64-darwin:$PATH"
+curl -fsSL https://github.com/filipecabaco/ampoule/releases/download/v0.1.0/ampoule-0.1.0-aarch64-darwin.tar.gz | tar -xz
+export PATH="$PWD/ampoule-0.1.0-aarch64-darwin:$PATH"
 ampoule version
 ```
+
+If the app has no NIFs, the bare binary is enough:
+`curl -fLo ampoule https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin && chmod +x ampoule`.
 
 Packing needs Elixir and Erlang/OTP 28 on the packing machine, since `ampoule release` runs
 `mix release`. To build ampoule itself, see [CONTRIBUTING.md](CONTRIBUTING.md).
