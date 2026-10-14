@@ -633,6 +633,14 @@ fn load_engine(engine: &Engine, packed: Option<&'static [u8]>) -> Result<Module>
     unsafe { Module::deserialize(engine, &native) }.map_err(|e| anyhow::anyhow!("loading the engine: {e:?}"))
 }
 
+/// Allocators whose carriers come from `malloc` instead of `erl_mseg` (`-M<A>mmmbc 0 -M<A>mmsbc 0`).
+/// wasi-libc's emulated `munmap` frees only the exact range `mmap` returned, but ERTS maps
+/// `size + alignment` and unmaps the unaligned head and tail, then the aligned interior: those
+/// calls fail, ERTS ignores the error, and every freed mseg carrier stays in linear memory, which
+/// never shrinks. An idle Realtime grew by about 19 MB a minute; with this it stays flat and starts
+/// about 100 MB smaller. A release's vm.args can still set these.
+const CARRIERS_FROM_MALLOC: [&str; 10] = ["B", "D", "E", "F", "H", "I", "L", "R", "S", "T"];
+
 /// A file of the release by its guest path (an `-args_file`), or None if the release has no such
 /// file. Only files inside the release can be read before the VM starts.
 fn read_app_file(app: &Backend, guest: &str) -> Result<Option<String>> {
@@ -811,6 +819,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
     let s = format!("{cores}:{cores}");
     let mut argv: Vec<String> = ["beam", "-S", &s, "-SDcpu", &s].map(String::from).to_vec();
+    argv.extend(CARRIERS_FROM_MALLOC.iter().flat_map(|a| [format!("-M{a}mmmbc"), "0".into(), format!("-M{a}mmsbc"), "0".into()]));
     argv.extend(vm.emu);
     if let Some(n) = o.schedulers {
         argv.extend(["-S".into(), format!("{n}:{n}"), "-SDcpu".into(), format!("{n}:{n}")]);
