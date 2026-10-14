@@ -41,12 +41,22 @@ pub fn expand(args: &[String], read: &mut dyn FnMut(&str) -> Result<Option<Strin
     Ok(out)
 }
 
+/// Add flags written as in an args file (`--vm-args`, `vm_args` in ampoule.toml) after what is
+/// already in `out`; `source` names them in errors.
+pub fn add(source: &str, text: &str, read: &mut dyn FnMut(&str) -> Result<Option<String>>, out: &mut Expanded) -> Result<()> {
+    apply(source, text, read, out, 0)
+}
+
 fn include(file: &str, read: &mut dyn FnMut(&str) -> Result<Option<String>>, out: &mut Expanded, depth: usize) -> Result<()> {
     if depth >= MAX_DEPTH {
         bail!("{file}: -args_file nested more than {MAX_DEPTH} deep");
     }
     let Some(text) = read(file)? else { return Ok(()) };
-    let words = split(&text);
+    apply(file, &text, read, out, depth)
+}
+
+fn apply(file: &str, text: &str, read: &mut dyn FnMut(&str) -> Result<Option<String>>, out: &mut Expanded, depth: usize) -> Result<()> {
+    let words = split(text);
     let mut i = 0;
     while i < words.len() {
         let w = &words[i];
@@ -104,6 +114,43 @@ fn include(file: &str, read: &mut dyn FnMut(&str) -> Result<Option<String>>, out
         }
     }
     Ok(())
+}
+
+/// Rewrite relative scheduler counts in emulator flags (`-S`, `-SDcpu`) as absolute ones for a
+/// host with `cores` cores. The emulator resolves a missing or non-positive count against the
+/// processors it detects, and inside wasm it detects one, so `+S :6` or `+S -2` would fail or mean
+/// something else; erl_init.c's rules applied to `cores` give what they mean on the host.
+pub fn resolve_schedulers(emu: &mut [String], cores: usize) {
+    let cores = cores as i64;
+    let rel = |n: i64| if n > 0 { n } else { cores + n };
+    let resolve = |v: &str| -> Option<String> {
+        match v.split_once(':') {
+            Some(("", onln)) => Some(format!("{cores}:{}", rel(onln.parse().ok()?))),
+            Some((tot, onln)) => Some(format!("{}:{}", rel(tot.parse().ok()?), rel(onln.parse().ok()?))),
+            None => Some(rel(v.parse().ok()?).to_string()),
+        }
+    };
+    let mut i = 0;
+    while i < emu.len() {
+        if emu[i] == "-S" || emu[i] == "-SDcpu" {
+            if let Some(v) = emu.get(i + 1).and_then(|v| resolve(v)) {
+                emu[i + 1] = v;
+            }
+            i += 2;
+            continue;
+        }
+        // The value can also be attached: -S4:2, -SDcpu:2.
+        let attached = emu[i]
+            .strip_prefix("-SDcpu")
+            .map(|v| ("-SDcpu", v))
+            .or_else(|| emu[i].strip_prefix("-S").filter(|v| v.starts_with(|c: char| c.is_ascii_digit() || c == ':' || c == '-')).map(|v| ("-S", v)));
+        if let Some((flag, v)) = attached.filter(|(_, v)| !v.is_empty()) {
+            if let Some(v) = resolve(v) {
+                emu[i] = format!("{flag}{v}");
+            }
+        }
+        i += 1;
+    }
 }
 
 /// Whether emulator flag `+flag` takes the next word as its value (erlexec's tables).
@@ -237,6 +284,23 @@ mod tests {
         let e = run(&["-args_file", "vm"], &[("vm", "-name app@127.0.0.1 -setcookie secret -hidden -kernel a b")]).unwrap();
         assert_eq!(e.dropped, s(&["-name app@127.0.0.1", "-setcookie secret", "-hidden"]));
         assert_eq!(e.erl, s(&["-kernel", "a", "b"]));
+    }
+
+    #[test]
+    fn added_text_goes_after_the_files_and_can_include_one() {
+        let mut e = run(&["-args_file", "vm"], &[("vm", "+S 4:4"), ("more", "+A 2")]).unwrap();
+        let files: HashMap<String, String> = [("more".to_string(), "+A 2".to_string())].into();
+        add("--vm-args", "+S 2:2 -args_file more -kernel x y", &mut |f| Ok(files.get(f).cloned()), &mut e).unwrap();
+        assert_eq!(e.emu, s(&["-S", "4:4", "-S", "2:2", "-A", "2"]));
+        assert_eq!(e.erl, s(&["-kernel", "x", "y"]));
+        assert!(add("--vm-args", "+P", &mut |_| Ok(None), &mut e).unwrap_err().to_string().contains("--vm-args: +P needs a value"));
+    }
+
+    #[test]
+    fn relative_scheduler_counts_resolve_against_host_cores() {
+        let mut emu = s(&["-S", ":6", "-SDcpu", "-2:-4", "-S", "0", "-S", "4:2", "-S12:3", "-SDcpu:2", "-SDio", "2", "-SP", "50:50"]);
+        resolve_schedulers(&mut emu, 18);
+        assert_eq!(emu, s(&["-S", "18:6", "-SDcpu", "16:14", "-S", "18", "-S", "4:2", "-S12:3", "-SDcpu18:2", "-SDio", "2", "-SP", "50:50"]));
     }
 
     #[test]

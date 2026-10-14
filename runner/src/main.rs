@@ -348,6 +348,7 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
 #[derive(Default)]
 struct RunOpts {
     schedulers: Option<usize>,
+    vm_args: Option<String>,
     stop_timeout: Option<u64>,
     memory_max: Option<u64>,
     mounts: Vec<(PathBuf, String, bool)>,
@@ -386,6 +387,7 @@ fn app_usage(m: &Manifest) -> ! {
          \n  --mount H:G[:ro],...   AMPOULE_MOUNTS       expose host paths to the app\
          \n  --memory-max SIZE      AMPOULE_MEMORY_MAX   cap the VM's memory, e.g. 512M, 2G\
          \n  --schedulers N         AMPOULE_SCHEDULERS   schedulers (default: host cores)\
+         \n  --vm-args FLAGS        AMPOULE_VM_ARGS      VM flags as in vm.args, e.g. \"+S :4 +SDio 2\" (after vm.args)\
          \n  --stop-timeout SECS    AMPOULE_STOP_TIMEOUT how long SIGTERM/SIGINT wait for a clean stop (default: 30)\
          \n  --tmp DIR              AMPOULE_TMP          host directory behind /tmp\
          \n                         AMPOULE_CA_BUNDLE    CA certificates file (default: the host's)\
@@ -457,6 +459,7 @@ fn apply_opt(o: &mut RunOpts, key: &str, v: &str) -> Result<()> {
         },
         "memory-max" => o.memory_max = Some(parse_size(v)?),
         "schedulers" => o.schedulers = Some(v.parse()?),
+        "vm-args" => o.vm_args = Some(v.to_string()),
         "stop-timeout" => o.stop_timeout = Some(v.parse().with_context(|| format!("bad timeout {v}"))?),
         "tmp" => o.tmp = Some(PathBuf::from(v)),
         "env" => {
@@ -478,6 +481,7 @@ const ENV_OPTS: &[(&str, &str)] = &[
     ("AMPOULE_MOUNTS", "mount"),
     ("AMPOULE_MEMORY_MAX", "memory-max"),
     ("AMPOULE_SCHEDULERS", "schedulers"),
+    ("AMPOULE_VM_ARGS", "vm-args"),
     ("AMPOULE_STOP_TIMEOUT", "stop-timeout"),
     ("AMPOULE_TMP", "tmp"),
 ];
@@ -794,9 +798,20 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
         Image::Packed(bytes) => Backend::Embedded(Arc::new(vfs::RootFs::parse(bytes)?)),
         Image::Dir(dir) => Backend::Host { path: dir.clone(), ro: true },
     };
-    let vm = vmargs::expand(&erl_args, &mut |file| read_app_file(&app_backend, file))?;
+    let mut read = |file: &str| read_app_file(&app_backend, file);
+    let mut vm = vmargs::expand(&erl_args, &mut read)?;
+    // ampoule.toml's vm_args, then --vm-args, after the release's vm.args: later flags win. Their
+    // init arguments go before -extra, where the files' arguments already are.
+    let before = vm.erl.len();
+    vmargs::add("vm_args in ampoule.toml", &m.vm_args, &mut read, &mut vm)?;
+    if let Some(text) = &o.vm_args {
+        vmargs::add("--vm-args", text, &mut read, &mut vm)?;
+    }
+    let added = vm.erl.split_off(before);
+    let at = vm.erl.iter().position(|a| a == "-extra").unwrap_or(vm.erl.len());
+    vm.erl.splice(at..at, added);
     if !vm.dropped.is_empty() {
-        eprintln!("ampoule: ignoring {} from vm.args (the app runs as one node)", vm.dropped.join(", "));
+        eprintln!("ampoule: ignoring VM flags {} (the app runs as one node)", vm.dropped.join(", "));
     }
     let mut mounts = vec![
         Mount { guest: APP.into(), backend: app_backend },
@@ -820,6 +835,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     let s = format!("{cores}:{cores}");
     let mut argv: Vec<String> = ["beam", "-S", &s, "-SDcpu", &s].map(String::from).to_vec();
     argv.extend(CARRIERS_FROM_MALLOC.iter().flat_map(|a| [format!("-M{a}mmmbc"), "0".into(), format!("-M{a}mmsbc"), "0".into()]));
+    vmargs::resolve_schedulers(&mut vm.emu, cores);
     argv.extend(vm.emu);
     if let Some(n) = o.schedulers {
         argv.extend(["-S".into(), format!("{n}:{n}"), "-SDcpu".into(), format!("{n}:{n}")]);

@@ -185,7 +185,8 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--deny-connect ADDR` | `AMPOULE_DENY` | refuse connections to `ADDR` (ip:port) |
 | `--mount H:G[:ro],...` | `AMPOULE_MOUNTS` | expose host path `H` at guest path `G` |
 | `--memory-max SIZE` | `AMPOULE_MEMORY_MAX` | cap the VM's memory, e.g. `512M`, `2G` |
-| `--schedulers N` | `AMPOULE_SCHEDULERS` | scheduler threads (default: `+S` in vm.args, else host cores) |
+| `--schedulers N` | `AMPOULE_SCHEDULERS` | scheduler threads (default: `+S` in the VM flags, else host cores) |
+| `--vm-args FLAGS` | `AMPOULE_VM_ARGS` | VM flags written as in `vm.args`, e.g. `"+S :4 +SDio 2"` |
 | `--stop-timeout SECS` | `AMPOULE_STOP_TIMEOUT` | how long SIGTERM and SIGINT wait for a clean stop (default: 30) |
 | `--tmp DIR` | `AMPOULE_TMP` | host directory behind `/tmp` (default: a private one) |
 | | `AMPOULE_CA_BUNDLE` | CA certificates file (default: the host's) |
@@ -195,9 +196,12 @@ The rest of the host environment passes through to the app, so `PORT=8080 DATABA
 works as it would with a normal release. Variables that would break the runtime's layout
 (`RELEASE_*`, `ERL_*`, `AMPOULE_*`, `ROOTDIR`, `BINDIR`, `HOME`, ...) are not passed through.
 
-The release's `vm.args` applies as it would with `erl`: `+` flags tune the emulator (`+S`, `+sbwt`,
-`+hmax`, ...), `-env` sets a variable and other flags reach `init`. Command-line options win over
-`vm.args`. Distribution flags (`-name`, `-sname`, `-setcookie`, ...) are left out with a warning.
+VM flags apply as they would with `erl`: `+` flags tune the emulator (`+S`, `+sbwt`, `+hmax`, ...),
+`-env` sets a variable and other flags reach `init`. They come from the release's `vm.args`, then
+`vm_args` in `ampoule.toml`, then `--vm-args` (or `AMPOULE_VM_ARGS`), and a later flag wins;
+`--schedulers` wins over all of them. Inside wasm the VM sees one processor, so scheduler counts
+that depend on it (`+S :4`, `+S -2`, `+SDcpu :2`) are resolved against the host's cores.
+Distribution flags (`-name`, `-sname`, `-setcookie`, ...) are left out with a warning.
 
 For debugging, `AMPOULE_TRACE=1` logs path resolution and `poll_oneoff` calls to stderr, and
 `AMPOULE_ENGINE=path/to/beam.wasm` runs a different, non-precompiled engine.
@@ -209,6 +213,7 @@ stores it in the binary:
 
 ```toml
 serve = ["migrate", { run = "seed", when = "SEED=true" }, "start"]   # `<binary> serve`
+vm_args = "+S :4 +SDio 2"        # VM flags as in vm.args, after the release's own
 
 [commands]                       # `<binary> migrate` evaluates the expression
 migrate = "MyApp.Release.migrate()"
