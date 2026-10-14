@@ -3,6 +3,7 @@
 //!
 //! ```toml
 //! serve = ["migrate", { run = "seed", when = "SEED=true" }, "start"]   # `<binary> serve`
+//! vm_args = "+S :4 +SDio 2"        # VM flags as in vm.args, after the release's own
 //!
 //! [commands]                       # extra commands: `<binary> migrate` evaluates the expression
 //! migrate = "MyApp.Release.migrate()"
@@ -78,6 +79,9 @@ pub struct Config {
     pub start: StartConfig,
     #[serde(default)]
     pub network: Network,
+    /// VM flags written as in vm.args, applied after the release's vm.args.
+    #[serde(default)]
+    pub vm_args: String,
 }
 
 impl Config {
@@ -120,6 +124,9 @@ pub struct Manifest {
     /// NIFs linked into the payload's engine (by library name).
     #[serde(default)]
     pub nifs: Vec<String>,
+    /// `vm_args` from ampoule.toml.
+    #[serde(default)]
+    pub vm_args: String,
 }
 
 impl Manifest {
@@ -139,6 +146,7 @@ impl Manifest {
             start_env: cfg.start.env,
             network: cfg.network,
             nifs: Vec::new(),
+            vm_args: cfg.vm_args,
         }
     }
 }
