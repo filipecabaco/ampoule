@@ -22,6 +22,7 @@ mod signals;
 mod threads;
 mod toolchain;
 mod vfs;
+mod vmargs;
 mod wasi;
 
 use std::collections::BTreeMap;
@@ -632,6 +633,28 @@ fn load_engine(engine: &Engine, packed: Option<&'static [u8]>) -> Result<Module>
     unsafe { Module::deserialize(engine, &native) }.map_err(|e| anyhow::anyhow!("loading the engine: {e:?}"))
 }
 
+/// A file of the release by its guest path (an `-args_file`), or None if the release has no such
+/// file. Only files inside the release can be read before the VM starts.
+fn read_app_file(app: &Backend, guest: &str) -> Result<Option<String>> {
+    let normalized = kernel::normalize(guest);
+    let Some(rel) = normalized.strip_prefix(APP).filter(|r| r.starts_with('/')) else {
+        bail!("-args_file {guest}: only files inside the release ({APP}) can be read");
+    };
+    let bytes = match app {
+        Backend::Embedded(fs) => match fs.lookup(rel, true) {
+            Some((_, node)) if node.kind == vfs::KIND_FILE => fs.read(node)?,
+            _ => return Ok(None),
+        },
+        Backend::Host { path, .. } => match std::fs::read(path.join(rel.trim_start_matches('/'))) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e).with_context(|| format!("reading {guest}")),
+        },
+        Backend::Proc => return Ok(None),
+    };
+    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+}
+
 /// The host directory behind the guest's /tmp: `--tmp`, kept as is, or a per-process directory
 /// the runtime owns and removes when it exits.
 fn private_tmp(o: &RunOpts) -> Result<PathBuf> {
@@ -763,6 +786,10 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
         Image::Packed(bytes) => Backend::Embedded(Arc::new(vfs::RootFs::parse(bytes)?)),
         Image::Dir(dir) => Backend::Host { path: dir.clone(), ro: true },
     };
+    let vm = vmargs::expand(&erl_args, &mut |file| read_app_file(&app_backend, file))?;
+    if !vm.dropped.is_empty() {
+        eprintln!("ampoule: ignoring {} from vm.args (the app runs as one node)", vm.dropped.join(", "));
+    }
     let mut mounts = vec![
         Mount { guest: APP.into(), backend: app_backend },
         Mount { guest: "/tmp".into(), backend: Backend::Host { path: tmp.clone(), ro: false } },
@@ -780,12 +807,23 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
         mounts.push(Mount { guest: guest.clone(), backend: Backend::Host { path: host.clone(), ro: *ro } });
     }
 
-    let schedulers = o.schedulers.unwrap_or_else(|| std::thread::available_parallelism().map_or(2, |n| n.get()));
+    // A later -S wins, so vm.args overrides the default and --schedulers overrides vm.args.
+    let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
+    let s = format!("{cores}:{cores}");
+    let mut argv: Vec<String> = ["beam", "-S", &s, "-SDcpu", &s].map(String::from).to_vec();
+    argv.extend(vm.emu);
+    if let Some(n) = o.schedulers {
+        argv.extend(["-S".into(), format!("{n}:{n}"), "-SDcpu".into(), format!("{n}:{n}")]);
+    }
     let bindir = format!("{APP}/erts-{}/bin", m.erts_vsn);
-    let s = format!("{schedulers}:{schedulers}");
-    let mut argv: Vec<String> =
-        ["beam", "-S", &s, "-SDcpu", &s, "--", "-root", APP, "-bindir", &bindir, "-progname", "erl", "--", "-home", "/tmp", "--"].map(String::from).to_vec();
-    argv.extend(erl_args);
+    argv.extend(["--", "-root", APP, "-bindir", &bindir, "-progname", "erl", "--", "-home", "/tmp", "--"].map(String::from));
+    argv.extend(vm.erl);
+    if !vm.extra.is_empty() {
+        if !argv.iter().any(|a| a == "-extra") {
+            argv.push("-extra".into());
+        }
+        argv.extend(vm.extra);
+    }
 
     let reserved = |k: &str| {
         k.starts_with("RELEASE_") || k.starts_with("ERL_") || k.starts_with("AMPOULE_") || matches!(k, "ROOTDIR" | "BINDIR" | "EMU" | "PROGNAME" | "HOME")
@@ -796,6 +834,8 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     }
     // vars_os: std::env::vars() panics on a variable that is not UTF-8; such variables are skipped.
     env.extend(std::env::vars_os().filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?))).filter(|(k, _)| !reserved(k)));
+    // vm.args -env overrides the inherited environment, as erlexec does.
+    env.extend(vm.env);
     for (k, v) in [
         ("ROOTDIR", APP.to_string()),
         ("BINDIR", bindir.clone()),

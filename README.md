@@ -185,7 +185,7 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--deny-connect ADDR` | `AMPOULE_DENY` | refuse connections to `ADDR` (ip:port) |
 | `--mount H:G[:ro],...` | `AMPOULE_MOUNTS` | expose host path `H` at guest path `G` |
 | `--memory-max SIZE` | `AMPOULE_MEMORY_MAX` | cap the VM's memory, e.g. `512M`, `2G` |
-| `--schedulers N` | `AMPOULE_SCHEDULERS` | scheduler threads (default: host cores) |
+| `--schedulers N` | `AMPOULE_SCHEDULERS` | scheduler threads (default: `+S` in vm.args, else host cores) |
 | `--stop-timeout SECS` | `AMPOULE_STOP_TIMEOUT` | how long SIGTERM and SIGINT wait for a clean stop (default: 30) |
 | `--tmp DIR` | `AMPOULE_TMP` | host directory behind `/tmp` (default: a private one) |
 | | `AMPOULE_CA_BUNDLE` | CA certificates file (default: the host's) |
@@ -194,6 +194,10 @@ Each option has an environment-variable form, and a flag wins over its variable:
 The rest of the host environment passes through to the app, so `PORT=8080 DATABASE_URL=... ./my_app start`
 works as it would with a normal release. Variables that would break the runtime's layout
 (`RELEASE_*`, `ERL_*`, `AMPOULE_*`, `ROOTDIR`, `BINDIR`, `HOME`, ...) are not passed through.
+
+The release's `vm.args` applies as it would with `erl`: `+` flags tune the emulator (`+S`, `+sbwt`,
+`+hmax`, ...), `-env` sets a variable and other flags reach `init`. Command-line options win over
+`vm.args`. Distribution flags (`-name`, `-sname`, `-setcookie`, ...) are left out with a warning.
 
 For debugging, `AMPOULE_TRACE=1` logs path resolution and `poll_oneoff` calls to stderr, and
 `AMPOULE_ENGINE=path/to/beam.wasm` runs a different, non-precompiled engine.
@@ -298,7 +302,8 @@ one native library.
 
 - Host processes: port programs, `:os.cmd/1` and `System.cmd/3` cannot start anything. For the same
   reason os_mon's `memsup`, `cpu_sup`, `disksup` and `os_sup` are switched off.
-- Distribution: the app runs as one node; packing removes distribution from its start arguments.
+- Distribution: the app runs as one node; packing removes distribution from its start arguments,
+  and the runtime leaves distribution flags in `vm.args` out.
 - NIF threads: a thread a NIF starts must return from its function. `enif_thread_exit` ends the
   thread without the cleanup wasi-libc would do, so joining that thread never returns.
 - OTP version: the engine fixes the OTP major, currently OTP 28 (ERTS 16).
