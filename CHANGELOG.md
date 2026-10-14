@@ -12,7 +12,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - VM flags could only come from the release's `vm.args`, and scheduler counts relative to the
   processor count (`+S :4`, `+S -2`) failed or meant one processor, which is all the VM sees inside
   wasm. Flags can now also be set with `vm_args` in `ampoule.toml` and with `--vm-args` /
-  `AMPOULE_VM_ARGS` at run time, and relative scheduler counts resolve against the host's cores.
+  `AMPOULE_VM_ARGS` at run time, and relative scheduler counts resolve against the host's cores. A
+  resolved online count is capped at the total, so `+S :6` on a four-core host runs 4:4.
 - Memory grew without bound while the app was idle (about 19 MB a minute for Realtime): wasi-libc's
   emulated `munmap` frees only an exact `mmap` range, so carriers ERTS released through `erl_mseg`
   stayed in linear memory. Allocators now take their carriers from `malloc`

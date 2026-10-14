@@ -123,11 +123,23 @@ fn apply(file: &str, text: &str, read: &mut dyn FnMut(&str) -> Result<Option<Str
 pub fn resolve_schedulers(emu: &mut [String], cores: usize) {
     let cores = cores as i64;
     let rel = |n: i64| if n > 0 { n } else { cores + n };
+    // Only counts that depend on the processor count are rewritten. Online is capped at the total
+    // there, so `+S :6` on a four-core host means 4:4 instead of a VM that refuses to start.
     let resolve = |v: &str| -> Option<String> {
         match v.split_once(':') {
-            Some(("", onln)) => Some(format!("{cores}:{}", rel(onln.parse().ok()?))),
-            Some((tot, onln)) => Some(format!("{}:{}", rel(tot.parse().ok()?), rel(onln.parse().ok()?))),
-            None => Some(rel(v.parse().ok()?).to_string()),
+            Some((tot, onln)) => {
+                let t: i64 = if tot.is_empty() { 0 } else { tot.parse().ok()? };
+                let o: i64 = onln.parse().ok()?;
+                if t > 0 && o > 0 {
+                    return None;
+                }
+                let t = rel(t);
+                Some(format!("{t}:{}", rel(o).min(t)))
+            },
+            None => {
+                let t: i64 = v.parse().ok()?;
+                (t <= 0).then(|| rel(t).to_string())
+            },
         }
     };
     let mut i = 0;
@@ -301,6 +313,13 @@ mod tests {
         let mut emu = s(&["-S", ":6", "-SDcpu", "-2:-4", "-S", "0", "-S", "4:2", "-S12:3", "-SDcpu:2", "-SDio", "2", "-SP", "50:50"]);
         resolve_schedulers(&mut emu, 18);
         assert_eq!(emu, s(&["-S", "18:6", "-SDcpu", "16:14", "-S", "18", "-S", "4:2", "-S12:3", "-SDcpu18:2", "-SDio", "2", "-SP", "50:50"]));
+    }
+
+    #[test]
+    fn relative_online_counts_never_exceed_a_small_hosts_total() {
+        let mut emu = s(&["-S", ":6", "-SDcpu", ":6", "-S", "8:6"]);
+        resolve_schedulers(&mut emu, 4);
+        assert_eq!(emu, s(&["-S", "4:4", "-SDcpu", "4:4", "-S", "8:6"]));
     }
 
     #[test]
