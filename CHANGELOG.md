@@ -7,6 +7,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Memory grew without bound while the app was idle (about 19 MB a minute for Realtime): wasi-libc's
+  emulated `munmap` frees only an exact `mmap` range, so carriers ERTS released through `erl_mseg`
+  stayed in linear memory. Allocators now take their carriers from `malloc`
+  (`-M<A>mmmbc 0 -M<A>mmsbc 0`), which reuses them; Realtime also starts about 100 MB smaller.
 - The release's `vm.args` was ignored: the runtime starts the VM without `erlexec`, so nothing read
   `-args_file`. Its `+` emulator flags, `-env` variables and `init` arguments now apply, with
   `--schedulers` still taking precedence; distribution flags are left out with a warning.
