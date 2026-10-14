@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The release's `vm.args` was ignored: the runtime starts the VM without `erlexec`, so nothing read
+  `-args_file`. Its `+` emulator flags, `-env` variables and `init` arguments now apply, with
+  `--schedulers` still taking precedence; distribution flags are left out with a warning.
+
 ## [0.1.0] - 2026-10-13
 
 First release: pack an Erlang/Elixir release into one binary per platform, with NIFs rebuilt for
