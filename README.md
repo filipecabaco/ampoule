@@ -121,8 +121,8 @@ Download the archive for your machine from the [releases page](https://github.co
 NIF kit (`kit/`) and the license. Keep `kit/` next to `ampoule`.
 
 ```sh
-curl -fsSL https://github.com/filipecabaco/ampoule/releases/download/v0.1.2/ampoule-0.1.2-aarch64-darwin.tar.gz | tar -xz
-export PATH="$PWD/ampoule-0.1.2-aarch64-darwin:$PATH"
+curl -fsSL https://github.com/filipecabaco/ampoule/releases/download/v0.1.3/ampoule-0.1.3-aarch64-darwin.tar.gz | tar -xz
+export PATH="$PWD/ampoule-0.1.3-aarch64-darwin:$PATH"
 ampoule version
 ```
 
