@@ -93,10 +93,25 @@ pub fn split(bytes: &'static [u8]) -> Result<(&'static [u8], Option<Payload>)> {
     Ok((&bytes[..start], Some(Payload { rootfs, engine, manifest })))
 }
 
-/// The running executable, read once.
+/// The running executable, mapped read-only for the life of the process. Only the pages read become
+/// resident, and they are clean and file-backed, where a heap copy kept the whole binary (the engine
+/// and every compressed file of the release) in memory.
 pub fn self_bytes() -> Result<&'static [u8]> {
+    use std::os::fd::AsRawFd;
     let exe = std::env::current_exe()?;
-    Ok(Box::leak(std::fs::read(&exe).with_context(|| format!("reading {}", exe.display()))?.into_boxed_slice()))
+    let file = std::fs::File::open(&exe).with_context(|| format!("opening {}", exe.display()))?;
+    let len = usize::try_from(file.metadata()?.len())?;
+    if len == 0 {
+        return Ok(&[]);
+    }
+    // SAFETY: a private read-only mapping that is never unmapped, so the slice lives as long as the
+    // process. The file is this running executable: the kernel refuses writes to it (ETXTBSY), and
+    // replacing it (a new pack) makes a new file, leaving this mapping on the old one.
+    let ptr = unsafe { libc::mmap(std::ptr::null_mut(), len, libc::PROT_READ, libc::MAP_PRIVATE, file.as_raw_fd(), 0) };
+    if ptr == libc::MAP_FAILED {
+        return Err(std::io::Error::last_os_error()).with_context(|| format!("mapping {}", exe.display()));
+    }
+    Ok(unsafe { std::slice::from_raw_parts(ptr as *const u8, len) })
 }
 
 /// Prune, strip and compress `release` into a rootfs image. Native files are left out; the

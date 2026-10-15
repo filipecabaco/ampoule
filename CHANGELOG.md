@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Every packed app kept a heap copy of its whole binary (about 33 MB for Realtime) for its lifetime.
+  The runtime now maps the binary read-only: only the parts read stay resident, as clean file-backed
+  pages the OS can reclaim and share between instances. Realtime's resident memory drops by about
+  20 MB on Linux and macOS, with no change in boot time.
+
 ## [0.1.1] - 2026-10-14
 
 ### Fixed
