@@ -4,6 +4,7 @@
 //! ```toml
 //! serve = ["migrate", { run = "seed", when = "SEED=true" }, "start"]   # `<binary> serve`
 //! vm_args = "+S :4 +SDio 2"        # VM flags as in vm.args, after the release's own
+//! idle_stop = "5m"               # `start` stops the VM after this long without connections
 //!
 //! [commands]                       # extra commands: `<binary> migrate` evaluates the expression
 //! migrate = "MyApp.Release.migrate()"
@@ -82,6 +83,9 @@ pub struct Config {
     /// VM flags written as in vm.args, applied after the release's vm.args.
     #[serde(default)]
     pub vm_args: String,
+    /// How long `start` runs without connections before stopping the VM (see `idle`).
+    #[serde(default)]
+    pub idle_stop: Option<String>,
 }
 
 impl Config {
@@ -92,6 +96,9 @@ impl Config {
             if cfg.commands.contains_key(*reserved) {
                 bail!("{}: [commands] cannot redefine the built-in `{reserved}`", path.display());
             }
+        }
+        if let Some(d) = &cfg.idle_stop {
+            crate::idle::parse_duration(d).with_context(|| format!("{}: idle_stop", path.display()))?;
         }
         for step in &cfg.serve {
             let c = match step {
@@ -127,6 +134,9 @@ pub struct Manifest {
     /// `vm_args` from ampoule.toml.
     #[serde(default)]
     pub vm_args: String,
+    /// `idle_stop` from ampoule.toml.
+    #[serde(default)]
+    pub idle_stop: Option<String>,
 }
 
 impl Manifest {
@@ -147,6 +157,7 @@ impl Manifest {
             network: cfg.network,
             nifs: Vec::new(),
             vm_args: cfg.vm_args,
+            idle_stop: cfg.idle_stop,
         }
     }
 }

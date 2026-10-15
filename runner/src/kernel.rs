@@ -45,6 +45,15 @@ pub struct Entry {
     pub kind: Kind,
 }
 
+impl Drop for Entry {
+    // Before the host fd closes, so --idle-stop stops counting a connection whose number is reused.
+    fn drop(&mut self) {
+        if let Kind::Socket(fd) = &self.kind {
+            crate::idle::closed(fd.as_raw_fd());
+        }
+    }
+}
+
 impl Entry {
     pub fn raw(&self) -> Option<RawFd> {
         match &self.kind {
@@ -282,7 +291,7 @@ impl Kernel {
             usize::try_from(fd).ok().and_then(|fd| fds.get_mut(fd)).and_then(Option::take).ok_or(errno::BADF)?
         };
         if let Kind::Socket(s) = &e.kind {
-            if Arc::strong_count(&e) > 1 {
+            if Arc::strong_count(&e) > 1 && !crate::idle::held(s.as_raw_fd()) {
                 unsafe { libc::shutdown(s.as_raw_fd(), libc::SHUT_RDWR) };
             }
         }

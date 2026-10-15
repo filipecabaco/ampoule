@@ -271,15 +271,26 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         let k = k(&c);
         ret((|| {
             let (_held, raw) = sock_fd(k, fd)?;
-            let sa = k.policy.bind(read_addr(k, addr as u32, len as u32)?)?;
+            let guest = read_addr(k, addr as u32, len as u32)?;
+            let sa = k.policy.bind(guest)?;
+            // With --idle-stop, a port the supervisor holds gets its listener instead of a new bind.
+            if let Some(r) = crate::idle::take_over(guest.port(), raw) {
+                return r.map(|()| 0);
+            }
             let (st, l) = to_host(sa);
-            check(unsafe { libc::bind(raw, &st as *const _ as *const libc::sockaddr, l) })
+            check(unsafe { libc::bind(raw, &st as *const _ as *const libc::sockaddr, l) })?;
+            crate::idle::bound(raw, guest.port());
+            Ok(0)
         })())
     })?;
 
     linker.func_wrap(m, "listen", |c: Caller<'_, Ctx>, fd: i32, backlog: i32| -> i32 {
         let k = k(&c);
-        ret(sock_fd(k, fd).and_then(|(_held, raw)| check(unsafe { libc::listen(raw, backlog) })))
+        ret(sock_fd(k, fd).and_then(|(_held, raw)| {
+            check(unsafe { libc::listen(raw, backlog) })?;
+            crate::idle::listening(raw);
+            Ok(0)
+        }))
     })?;
 
     linker.func_wrap(m, "accept", |c: Caller<'_, Ctx>, fd: i32, addr: i32, len: i32| -> i32 {
@@ -290,6 +301,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let mut l = std::mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
             let nfd = check(unsafe { libc::accept(raw, &mut st as *mut _ as *mut libc::sockaddr, &mut l) })?;
             let gfd = adopt_socket(k, nfd, false)?;
+            crate::idle::accepted(raw, nfd);
             if let Ok(sa) = from_host(&st) {
                 if let Err(e) = write_addr(k, sa, addr as u32, len as u32) {
                     // The guest never learns about gfd, so it must not stay in the table.

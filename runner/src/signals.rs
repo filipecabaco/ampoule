@@ -19,7 +19,7 @@ use crate::kernel::Kernel;
 
 /// wasi-libc's signal numbers (Linux's), which ERTS was compiled with.
 const GUEST_SIGQUIT: i32 = 3;
-const GUEST_SIGTERM: i32 = 15;
+pub const GUEST_SIGTERM: i32 = 15;
 
 const HANDLED: [libc::c_int; 3] = [libc::SIGTERM, libc::SIGINT, libc::SIGQUIT];
 
@@ -65,7 +65,7 @@ fn forward(k: &Kernel, set: &libc::sigset_t, stop_timeout: Duration) {
 }
 
 /// Write `guest_sig` to the guest's dispatcher pipe; false when there is none yet.
-fn deliver(k: &Kernel, guest_sig: i32) -> bool {
+pub fn deliver(k: &Kernel, guest_sig: i32) -> bool {
     let Some(raw) = k.signal_pipe.get().and_then(|e| e.raw()) else { return false };
     let bytes = guest_sig.to_le_bytes();
     unsafe { libc::write(raw, bytes.as_ptr().cast(), bytes.len()) == bytes.len() as isize }

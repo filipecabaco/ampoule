@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `--idle-stop TIME` (`AMPOULE_IDLE_STOP`, `idle_stop` in `ampoule.toml`): `start` stops the VM after
+  `TIME` without connections and starts it again on the next one, holding the app's listening
+  sockets so no connection is refused. An idle Realtime drops from about 150-250 MB to 2 MB; the
+  next request wakes it in 0.3-0.8 s.
+
 ## [0.1.2] - 2026-10-15
 
 ### Fixed
