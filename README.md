@@ -187,6 +187,7 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--memory-max SIZE` | `AMPOULE_MEMORY_MAX` | cap the VM's memory, e.g. `512M`, `2G` |
 | `--schedulers N` | `AMPOULE_SCHEDULERS` | scheduler threads (default: `+S` in the VM flags, else host cores) |
 | `--vm-args FLAGS` | `AMPOULE_VM_ARGS` | VM flags written as in `vm.args`, e.g. `"+S :4 +SDio 2"` |
+| `--idle-stop TIME` | `AMPOULE_IDLE_STOP` | with `start`, stop the VM after `TIME` without connections and start it again on the next one (`300`, `90s`, `5m`, `1h`; see [Stopping when idle](#stopping-when-idle)) |
 | `--stop-timeout SECS` | `AMPOULE_STOP_TIMEOUT` | how long SIGTERM and SIGINT wait for a clean stop (default: 30) |
 | `--tmp DIR` | `AMPOULE_TMP` | host directory behind `/tmp` (default: a private one) |
 | | `AMPOULE_CA_BUNDLE` | CA certificates file (default: the host's) |
@@ -214,6 +215,7 @@ stores it in the binary:
 ```toml
 serve = ["migrate", { run = "seed", when = "SEED=true" }, "start"]   # `<binary> serve`
 vm_args = "+S :4 +SDio 2"        # VM flags as in vm.args, after the release's own
+idle_stop = "5m"                 # stop the VM after 5 minutes without connections
 
 [commands]                       # `<binary> migrate` evaluates the expression
 migrate = "MyApp.Release.migrate()"
@@ -246,6 +248,39 @@ Code running in wasm cannot receive signals, so the runtime catches them on a de
 writes them into ERTS's own signal-dispatcher pipe, where OTP's `erl_signal_server` handles them as
 it would on a native build. Anything that stops processes with SIGTERM (`docker stop`, systemd,
 Kubernetes) gets a clean shutdown.
+
+### Stopping when idle
+
+With `--idle-stop TIME` (or `AMPOULE_IDLE_STOP`, or `idle_stop` in `ampoule.toml`), `start` stops
+the VM after `TIME` without connections and starts it again when the next one arrives, so an idle
+app costs only the runtime's own process:
+
+```console
+$ ./my_app --idle-stop 5m start
+ampoule: stopping the VM after 5m without connections
+...
+ampoule: no connections for 5m, stopping the VM until the next one
+ampoule: VM stopped; waiting for a connection on port 4000
+ampoule: connection on port 4000, starting the VM
+```
+
+The process that runs `start` holds the app's listening sockets and runs the VM in a child process.
+When the VM stops, the sockets stay open: a new connection waits in the listen backlog while the
+VM boots, and is accepted as soon as the app listens again, so none is refused. With `serve`, the
+earlier steps run once and only `start` runs again.
+
+| Realtime, measured | Idle | Waking |
+|---|---|---|
+| macOS, aarch64 | 2 MB, against about 150-250 MB running | first response 0.8 s after a request on a stopped VM |
+| Linux, aarch64 (francis) | 1.6 MB | first response 0.3 s |
+
+- Only connections to ports the app listens on with a fixed number count; outgoing ones (a
+  database, an API) do not. An open connection, such as a WebSocket, keeps the VM running.
+- Background work stops with the VM: timers, scheduled jobs, outgoing connections, subscriptions.
+  Use it for apps that only work in response to connections.
+- SIGTERM and SIGINT go to the running VM as usual; with the VM stopped, the process exits at once.
+- A connection that arrives at the moment the VM decides to stop can be accepted by an app that is
+  shutting down, and dropped.
 
 ### What the app sees
 

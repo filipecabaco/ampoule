@@ -11,6 +11,7 @@ mod config;
 mod engine;
 mod errno;
 mod hostfs;
+mod idle;
 mod kernel;
 mod mem;
 mod net;
@@ -348,6 +349,7 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
 #[derive(Default)]
 struct RunOpts {
     schedulers: Option<usize>,
+    idle_stop: Option<String>,
     vm_args: Option<String>,
     stop_timeout: Option<u64>,
     memory_max: Option<u64>,
@@ -388,6 +390,7 @@ fn app_usage(m: &Manifest) -> ! {
          \n  --memory-max SIZE      AMPOULE_MEMORY_MAX   cap the VM's memory, e.g. 512M, 2G\
          \n  --schedulers N         AMPOULE_SCHEDULERS   schedulers (default: host cores)\
          \n  --vm-args FLAGS        AMPOULE_VM_ARGS      VM flags as in vm.args, e.g. \"+S :4 +SDio 2\" (after vm.args)\
+         \n  --idle-stop TIME       AMPOULE_IDLE_STOP    with `start`, stop the VM after TIME without connections (300, 90s, 5m, 1h) and start it again on the next one\
          \n  --stop-timeout SECS    AMPOULE_STOP_TIMEOUT how long SIGTERM/SIGINT wait for a clean stop (default: 30)\
          \n  --tmp DIR              AMPOULE_TMP          host directory behind /tmp\
          \n                         AMPOULE_CA_BUNDLE    CA certificates file (default: the host's)\
@@ -460,6 +463,10 @@ fn apply_opt(o: &mut RunOpts, key: &str, v: &str) -> Result<()> {
         "memory-max" => o.memory_max = Some(parse_size(v)?),
         "schedulers" => o.schedulers = Some(v.parse()?),
         "vm-args" => o.vm_args = Some(v.to_string()),
+        "idle-stop" => {
+            idle::parse_duration(v)?;
+            o.idle_stop = Some(v.to_string());
+        },
         "stop-timeout" => o.stop_timeout = Some(v.parse().with_context(|| format!("bad timeout {v}"))?),
         "tmp" => o.tmp = Some(PathBuf::from(v)),
         "env" => {
@@ -482,6 +489,7 @@ const ENV_OPTS: &[(&str, &str)] = &[
     ("AMPOULE_MEMORY_MAX", "memory-max"),
     ("AMPOULE_SCHEDULERS", "schedulers"),
     ("AMPOULE_VM_ARGS", "vm-args"),
+    ("AMPOULE_IDLE_STOP", "idle-stop"),
     ("AMPOULE_STOP_TIMEOUT", "stop-timeout"),
     ("AMPOULE_TMP", "tmp"),
 ];
@@ -554,6 +562,19 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
             None => bail!("unknown command {custom} (see `help`)"),
         },
     };
+    if cmd == "start" {
+        let idle = match &o.idle_stop {
+            Some(v) => idle::parse_duration(v)?,
+            None => m.idle_stop.as_deref().map(idle::parse_duration).transpose()?.flatten(),
+        };
+        if let Some(after) = idle {
+            if !idle::is_child() {
+                // The supervisor never starts a VM itself; each child runs this same command.
+                std::process::exit(idle::supervise(after)?);
+            }
+            idle::init_child(after)?;
+        }
+    }
     std::process::exit(run_vm(&app, &o, erl_args, defaults)?)
 }
 
@@ -895,6 +916,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     }
     let spawner = threads::SPAWNER.get().context("runtime not started")?;
     signals::spawn(spawner.kernel.clone(), signal_set, std::time::Duration::from_secs(o.stop_timeout.unwrap_or(30)))?;
+    idle::watch(spawner.kernel.clone(), std::time::Duration::from_secs(o.stop_timeout.unwrap_or(30)))?;
     Ok(threads::run_main(spawner))
 }
 
