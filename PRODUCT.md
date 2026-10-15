@@ -42,7 +42,7 @@ running needs nothing.
 - OTP major fixed by the engine (OTP 28, ERTS 16).
 - No host processes (ports, `System.cmd`), one node (no distribution), NIF threads must return
   rather than call `enif_thread_exit`.
-- Released: v0.1.1 on GitHub Releases, one binary per target.
+- Released: v0.1.2 on GitHub Releases, one binary per target.
 
 ## Brand Commitments
 

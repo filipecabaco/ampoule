@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-15
+
 ### Fixed
 
 - Every packed app kept a heap copy of its whole binary (about 33 MB for Realtime) for its lifetime.
