@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-15
+
 ### Added
 
 - `--idle-stop TIME` (`AMPOULE_IDLE_STOP`, `idle_stop` in `ampoule.toml`): `start` stops the VM after
