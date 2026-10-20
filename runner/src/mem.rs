@@ -29,24 +29,33 @@ impl Mem {
         self.memory.data_size()
     }
 
+    /// The most the guest's memory can grow to, in bytes: `--memory-max`, or wasm32's 4 GiB.
+    pub fn limit(&self) -> u64 {
+        self.memory.ty().maximum().unwrap_or(65536) * 65536
+    }
+
     /// A host pointer to `len` guest bytes at `addr`, bounds-checked.
     pub fn ptr(&self, addr: u32, len: u32) -> R<*mut u8> {
         let end = addr as usize + len as usize;
         if end > self.size() {
             return Err(errno::FAULT);
         }
+        // SAFETY: `addr + len` is within the memory's current size, which never shrinks.
         Ok(unsafe { self.base().add(addr as usize) })
     }
 
     pub fn read(&self, addr: u32, len: u32) -> R<Vec<u8>> {
         let p = self.ptr(addr, len)?;
         let mut v = vec![0u8; len as usize];
+        // SAFETY: `p` is `len` bounds-checked guest bytes, `v` a separate host buffer as long; a
+        // raw copy, never a Rust slice over memory other threads write.
         unsafe { std::ptr::copy_nonoverlapping(p, v.as_mut_ptr(), len as usize) };
         Ok(v)
     }
 
     pub fn write(&self, addr: u32, data: &[u8]) -> R<()> {
         let p = self.ptr(addr, data.len() as u32)?;
+        // SAFETY: as in `read`, the other way.
         unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), p, data.len()) };
         Ok(())
     }
@@ -61,6 +70,7 @@ impl Mem {
     fn bytes<const N: usize>(&self, addr: u32) -> R<[u8; N]> {
         let p = self.ptr(addr, N as u32)?;
         let mut out = [0u8; N];
+        // SAFETY: as in `read`.
         unsafe { std::ptr::copy_nonoverlapping(p, out.as_mut_ptr(), N) };
         Ok(out)
     }

@@ -31,6 +31,7 @@ fn now_secs() -> f64 {
 
 fn loadavg() -> [f64; 3] {
     let mut l = [0f64; 3];
+    // SAFETY: room for the three averages asked for.
     unsafe { libc::getloadavg(l.as_mut_ptr(), 3) };
     l
 }
@@ -57,6 +58,8 @@ fn host() -> Host {
 #[cfg(target_os = "macos")]
 #[allow(deprecated)] // libc points at the mach2 crate for mach_host_self; one call does not warrant it
 fn host() -> Host {
+    /// # Safety
+    /// `T` must be the plain-data type the kernel stores under `name`.
     unsafe fn sysctl<T: Default>(name: &str) -> T {
         let mut v = T::default();
         let mut len = std::mem::size_of::<T>();
@@ -64,6 +67,9 @@ fn host() -> Host {
         libc::sysctlbyname(c.as_ptr(), &mut v as *mut T as *mut libc::c_void, &mut len, std::ptr::null_mut(), 0);
         v
     }
+    // SAFETY: each sysctl is read as the type the kernel stores under its name, and Mach's
+    // statistics into zeroed plain-data structs with their own counts. No safe crate in the tree
+    // wraps these.
     unsafe {
         let mem_total: u64 = sysctl("hw.memsize");
         let page: u64 = libc::sysconf(libc::_SC_PAGESIZE) as u64;
@@ -90,14 +96,17 @@ fn host() -> Host {
 }
 
 fn rusage() -> (u64, u64, u64, u64) {
-    let mut r: libc::rusage = unsafe { std::mem::zeroed() };
-    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut r) };
+    // SAFETY: rusage is plain data; getrusage fills it. (rustix has no getrusage.)
+    let r: libc::rusage = unsafe {
+        let mut r = std::mem::zeroed();
+        libc::getrusage(libc::RUSAGE_SELF, &mut r);
+        r
+    };
     let ticks = |t: libc::timeval| t.tv_sec as u64 * TICKS + t.tv_usec as u64 * TICKS / 1_000_000;
     (ticks(r.ru_utime), ticks(r.ru_stime), r.ru_minflt as u64, r.ru_majflt as u64)
 }
 
-/// `/<pid>/...` is `/self/...`: the guest is one process, and the pid it knows (WASI's emulated
-/// getpid) is not the host's.
+/// `/<pid>/...` is `/self/...`: the guest is one process, and its getpid is this process's.
 fn canonical(path: &str) -> String {
     let rest = path.trim_start_matches('/');
     let (first, tail) = rest.split_once('/').map(|(a, b)| (a, format!("/{b}"))).unwrap_or((rest, String::new()));
@@ -165,12 +174,16 @@ pub fn read(k: &Kernel, path: &str) -> Option<Vec<u8>> {
             "Limit", "Soft Limit", "Hard Limit", "Units", "Max open files", 4096, 4096, "files", "Max processes", "unlimited", "unlimited", "processes"
         ),
         "/meminfo" => {
+            // The VM's own ceiling, as a container's cgroup limit shows: the host's memory, capped
+            // at what the guest can grow to (`--memory-max`, or wasm32's 4 GiB) less what it has.
             let h = host();
+            let (limit, grown) = (k.mem.limit(), k.mem.size() as u64);
+            let room = limit.saturating_sub(grown);
             format!(
                 "MemTotal:       {} kB\nMemFree:        {} kB\nMemAvailable:   {} kB\nBuffers:        0 kB\nCached:         0 kB\nSwapTotal:      0 kB\nSwapFree:       0 kB\n",
-                h.mem_total / 1024,
-                h.mem_free / 1024,
-                h.mem_available / 1024
+                h.mem_total.min(limit) / 1024,
+                h.mem_free.min(room) / 1024,
+                h.mem_available.min(room) / 1024
             )
         },
         "/loadavg" => {

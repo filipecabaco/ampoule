@@ -1,5 +1,5 @@
 //! State shared by every wasm thread: the fd table, the mount table, args, environment and the
-//! network policy.
+//! policy for sockets and host processes.
 //!
 //! The guest sees one tree rooted at "/" (its only preopen) built from mounts: the embedded
 //! release at /app, host directories or files (/tmp, /etc/hosts, --mount), and virtual
@@ -7,7 +7,7 @@
 //! (host files, sockets, pipes, stdio) go straight to the host kernel; embedded files are read
 //! into memory when opened.
 
-use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
@@ -50,6 +50,7 @@ impl Drop for Entry {
     fn drop(&mut self) {
         if let Kind::Socket(fd) = &self.kind {
             crate::idle::closed(fd.as_raw_fd());
+            crate::unix::closed(fd.as_raw_fd());
         }
     }
 }
@@ -65,6 +66,16 @@ impl Entry {
 
     pub fn host_fd(&self) -> R<RawFd> {
         self.raw().ok_or(errno::BADF)
+    }
+
+    /// The host fd, borrowed for as long as the entry is held.
+    pub fn fd(&self) -> R<BorrowedFd<'_>> {
+        match &self.kind {
+            // SAFETY: the runtime's own stdin/stdout/stderr stay open for the life of the process.
+            Kind::Stdio(fd) => Ok(unsafe { BorrowedFd::borrow_raw(*fd) }),
+            Kind::File { fd, .. } | Kind::Socket(fd) | Kind::Pipe(fd) => Ok(fd.as_fd()),
+            Kind::Mem { .. } | Kind::Dir { .. } => Err(errno::BADF),
+        }
     }
 
     pub fn is_socket(&self) -> bool {
@@ -143,6 +154,8 @@ pub struct Kernel {
     /// The write end of ERTS's signal-dispatcher pipe, once the guest registers it. Held by entry,
     /// not by fd number, so a later close or renumber in the guest cannot redirect signals.
     pub signal_pipe: OnceLock<Arc<Entry>>,
+    /// The write end of the pipe the spawn driver reads child exits from (see `spawn`).
+    pub forker: OnceLock<OwnedFd>,
     pub policy: Policy,
 }
 
@@ -177,6 +190,7 @@ impl Kernel {
             next_tid: AtomicI32::new(1),
             live_threads: AtomicUsize::new(0),
             signal_pipe: OnceLock::new(),
+            forker: OnceLock::new(),
             policy,
         }
     }
@@ -227,6 +241,22 @@ impl Kernel {
         Err(errno::LOOP)
     }
 
+    /// The host path behind `guest`, for a host process to use: NOENT when it is missing, and
+    /// NOENT too when only the guest has it (the embedded release, /proc, virtual directories).
+    pub fn host_path(&self, guest: &str) -> R<PathBuf> {
+        let Node::Host(n) = self.resolve(guest, true)? else { return Err(errno::NOENT) };
+        match self.locate(&n.guest) {
+            Target::Host { root, rel, .. } if rel.is_empty() => Ok(root.to_path_buf()),
+            Target::Host { root, rel, .. } => Ok(root.join(rel)),
+            _ => Err(errno::NOENT),
+        }
+    }
+
+    /// Is the host path `p` inside a mount the guest can write to?
+    pub fn guest_writable(&self, p: &Path) -> bool {
+        self.mounts.iter().any(|m| matches!(&m.backend, Backend::Host { path, ro: false } if p.starts_with(path)))
+    }
+
     /// Mount points directly below `guest`, which appear as directories in its listing.
     pub fn mount_children(&self, guest: &str) -> Vec<String> {
         let prefix = if guest == "/" { "/".to_string() } else { format!("{guest}/") };
@@ -250,8 +280,14 @@ impl Kernel {
 
     /// Install `kind` at the lowest free guest fd.
     pub fn insert(&self, kind: Kind) -> R<i32> {
+        self.insert_entry(Arc::new(Entry { kind }))
+    }
+
+    /// Install `entry` at the lowest free guest fd; an entry already in the table gets a second
+    /// number, as dup() gives.
+    pub fn insert_entry(&self, entry: Arc<Entry>) -> R<i32> {
         let mut fds = self.fds.write().unwrap();
-        let entry = Some(Arc::new(Entry { kind }));
+        let entry = Some(entry);
         if let Some(i) = fds.iter().skip(4).position(|e| e.is_none()) {
             fds[i + 4] = entry;
             return Ok((i + 4) as i32);
@@ -292,7 +328,7 @@ impl Kernel {
         };
         if let Kind::Socket(s) = &e.kind {
             if Arc::strong_count(&e) > 1 && !crate::idle::held(s.as_raw_fd()) {
-                unsafe { libc::shutdown(s.as_raw_fd(), libc::SHUT_RDWR) };
+                let _ = rustix::net::shutdown(s, rustix::net::Shutdown::Both);
             }
         }
         Ok(e)
@@ -396,6 +432,14 @@ mod tests {
 
     fn link(dir: &crate::TestDir, at: &str, target: &str) {
         std::os::unix::fs::symlink(target, dir.0.join(at)).unwrap();
+    }
+
+    #[test]
+    fn only_paths_in_writable_mounts_are_guest_writable() {
+        let (dir, k) = sandbox();
+        let root = dir.0.canonicalize().unwrap();
+        assert!(k.guest_writable(&root.join("tmp/sub/file")));
+        assert!(!k.guest_writable(&root.join("data/x")) && !k.guest_writable(&root.join("secret")));
     }
 
     #[test]

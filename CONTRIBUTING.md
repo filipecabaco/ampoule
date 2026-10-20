@@ -93,9 +93,13 @@ and `SHA256SUMS`.
 | `engine.rs` | wasmtime configuration, shared with `build.rs` |
 | `kernel.rs` | fd table, mount table, path resolution |
 | `wasi.rs` | `wasi_snapshot_preview1` |
-| `net.rs` | the `ampoule_os` module: BSD sockets, pipes, signal registration |
+| `net.rs` | the `ampoule_os` module: BSD sockets, pipes, `dup`, signal registration |
+| `spawn.rs` | host processes: the runtime's stand-in for `erl_child_setup`, and `[process] allow` |
+| `unix.rs` | unix domain sockets at guest paths |
+| `fds.rs` | creating host fds close-on-exec, and the lock `fork` takes on macOS |
+| `idle.rs` | the `start` supervisor: `--idle-stop` and `--restart` |
 | `signals.rs` | host signals forwarded to ERTS |
-| `policy.rs` | the network policy |
+| `policy.rs` | the network policy, and the allowed programs |
 | `threads.rs` | `wasi.thread-spawn` and the main thread |
 | `proc.rs` | the generated `/proc` |
 | `vfs.rs` | the embedded rootfs reader |

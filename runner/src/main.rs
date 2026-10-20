@@ -10,6 +10,7 @@
 mod config;
 mod engine;
 mod errno;
+mod fds;
 mod hostfs;
 mod idle;
 mod kernel;
@@ -20,8 +21,10 @@ mod pack;
 mod policy;
 mod proc;
 mod signals;
+mod spawn;
 mod threads;
 mod toolchain;
+mod unix;
 mod vfs;
 mod vmargs;
 mod wasi;
@@ -82,6 +85,7 @@ fn main() {
 fn real_main() -> Result<()> {
     // Rust ignores SIGPIPE, so `<binary> info | head` would panic on a closed stdout; behave like
     // other CLI tools until the VM starts (run_vm ignores it again: guest sockets get EPIPE).
+    // SAFETY: setting a disposition, before any other thread exists. (rustix has no signal().)
     unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
     // Lossy, not std::env::args(), which panics on an argument that is not UTF-8.
     let mut argv = std::env::args_os().map(|a| a.to_string_lossy().into_owned());
@@ -350,6 +354,8 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
 struct RunOpts {
     schedulers: Option<usize>,
     idle_stop: Option<String>,
+    restart: Option<bool>,
+    memory_alarm: Option<u8>,
     vm_args: Option<String>,
     stop_timeout: Option<u64>,
     memory_max: Option<u64>,
@@ -358,6 +364,7 @@ struct RunOpts {
     tmp: Option<PathBuf>,
     hosts: Vec<(String, String)>,
     policy: policy::Policy,
+    allow_exec: Vec<String>,
 }
 
 fn app_usage(m: &Manifest) -> ! {
@@ -387,10 +394,13 @@ fn app_usage(m: &Manifest) -> ! {
          \n  --rewrite-connect A=B  AMPOULE_REWRITE      send connections for A (ip:port) to B\
          \n  --deny-connect ADDR    AMPOULE_DENY         refuse connections to ADDR (ip:port)\
          \n  --mount H:G[:ro],...   AMPOULE_MOUNTS       expose host paths to the app\
+         \n  --allow-exec PROGS     AMPOULE_ALLOW_EXEC   host programs the app may start, e.g. git,/bin/sh (\"*\": all on PATH)\
          \n  --memory-max SIZE      AMPOULE_MEMORY_MAX   cap the VM's memory, e.g. 512M, 2G\
          \n  --schedulers N         AMPOULE_SCHEDULERS   schedulers (default: host cores)\
          \n  --vm-args FLAGS        AMPOULE_VM_ARGS      VM flags as in vm.args, e.g. \"+S :4 +SDio 2\" (after vm.args)\
          \n  --idle-stop TIME       AMPOULE_IDLE_STOP    with `start`, stop the VM after TIME without connections (300, 90s, 5m, 1h) and start it again on the next one\
+         \n  --restart MODE         AMPOULE_RESTART      with `start`, on-failure: start the VM again when it fails (a crash, out of memory); off (default)\
+         \n  --memory-alarm PCT     AMPOULE_MEMORY_ALARM with `start`, set the system_memory_high_watermark alarm at PCT% of the memory limit (default: 80; 0: off)\
          \n  --stop-timeout SECS    AMPOULE_STOP_TIMEOUT how long SIGTERM/SIGINT wait for a clean stop (default: 30)\
          \n  --tmp DIR              AMPOULE_TMP          host directory behind /tmp\
          \n                         AMPOULE_CA_BUNDLE    CA certificates file (default: the host's)\
@@ -460,9 +470,21 @@ fn apply_opt(o: &mut RunOpts, key: &str, v: &str) -> Result<()> {
                 o.mounts.push((host, kernel::normalize(guest), ro));
             }
         },
+        "allow-exec" => {
+            o.allow_exec = list(v).map(String::from).collect();
+            config::Process::check(&o.allow_exec)?;
+        },
         "memory-max" => o.memory_max = Some(parse_size(v)?),
         "schedulers" => o.schedulers = Some(v.parse()?),
         "vm-args" => o.vm_args = Some(v.to_string()),
+        "restart" => o.restart = Some(config::parse_restart(v)?),
+        "memory-alarm" => {
+            let pct: u8 = v.parse().with_context(|| format!("bad percentage {v}"))?;
+            if pct > 100 {
+                bail!("--memory-alarm is a percentage (0-100)");
+            }
+            o.memory_alarm = Some(pct);
+        },
         "idle-stop" => {
             idle::parse_duration(v)?;
             o.idle_stop = Some(v.to_string());
@@ -486,10 +508,13 @@ const ENV_OPTS: &[(&str, &str)] = &[
     ("AMPOULE_REWRITE", "rewrite-connect"),
     ("AMPOULE_DENY", "deny-connect"),
     ("AMPOULE_MOUNTS", "mount"),
+    ("AMPOULE_ALLOW_EXEC", "allow-exec"),
     ("AMPOULE_MEMORY_MAX", "memory-max"),
     ("AMPOULE_SCHEDULERS", "schedulers"),
     ("AMPOULE_VM_ARGS", "vm-args"),
     ("AMPOULE_IDLE_STOP", "idle-stop"),
+    ("AMPOULE_RESTART", "restart"),
+    ("AMPOULE_MEMORY_ALARM", "memory-alarm"),
     ("AMPOULE_STOP_TIMEOUT", "stop-timeout"),
     ("AMPOULE_TMP", "tmp"),
 ];
@@ -498,6 +523,7 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
     let m = &app.manifest;
     let mut o = RunOpts::default();
     o.policy.listen = m.network.listen.clone();
+    o.allow_exec = m.process.allow.clone();
     for (g, h) in &m.network.port_map {
         o.policy.port_map.push((g.parse().with_context(|| format!("bad port {g} in [network] port_map"))?, *h));
     }
@@ -521,6 +547,7 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         }
     };
     let rest = &args[i + 1..];
+    o.policy.exec = spawn::Exec::resolve(&o.allow_exec, &std::env::var("PATH").unwrap_or_default());
 
     let eval = |expr: &str| -> Vec<String> {
         if m.elixir {
@@ -539,7 +566,14 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         },
         "start" => {
             let tail: &[&str] = if m.elixir { &["-mode", "embedded", "-extra", "--no-halt"] } else { &["-mode", "embedded"] };
-            (release_args(m, "start", tail), m.start_env.clone())
+            let mut a = release_args(m, "start", tail);
+            let pct = o.memory_alarm.or(m.memory_alarm).unwrap_or(config::MEMORY_ALARM);
+            if pct > 0 {
+                // An init flag, so before -extra; init evaluates it once the release has booted.
+                let at = a.iter().position(|x| x == "-extra").unwrap_or(a.len());
+                a.splice(at..at, ["-eval".to_string(), config::memory_alarm_eval(pct)]);
+            }
+            (a, m.start_env.clone())
         },
         "eval" => (eval(rest.first().context("eval needs an expression")?), BTreeMap::new()),
         "vm" => {
@@ -567,12 +601,16 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
             Some(v) => idle::parse_duration(v)?,
             None => m.idle_stop.as_deref().map(idle::parse_duration).transpose()?.flatten(),
         };
-        if let Some(after) = idle {
+        let restart = match o.restart {
+            Some(r) => r,
+            None => m.restart.as_deref().map(config::parse_restart).transpose()?.unwrap_or(false),
+        };
+        if idle.is_some() || restart {
             if !idle::is_child() {
                 // The supervisor never starts a VM itself; each child runs this same command.
-                std::process::exit(idle::supervise(after)?);
+                std::process::exit(idle::supervise(idle, restart)?);
             }
-            idle::init_child(after)?;
+            idle::init_child(idle)?;
         }
     }
     std::process::exit(run_vm(&app, &o, erl_args, defaults)?)
@@ -643,6 +681,9 @@ fn info(app: &App) -> Result<()> {
     }
     let listen = if m.network.listen.is_empty() { "any port".to_string() } else { format!("{:?}", m.network.listen) };
     println!("network:   listen {listen}");
+    if !m.process.allow.is_empty() {
+        println!("processes: {}", m.process.allow.join(", "));
+    }
     Ok(())
 }
 
@@ -715,6 +756,7 @@ fn private_tmp(o: &RunOpts) -> Result<PathBuf> {
     if OWNED_TMP.set(t.clone()).is_ok() {
         // Every way the guest ends the process (proc_exit, a trap, a raised signal) goes
         // through exit(3), so this runs whichever thread ends it.
+        // SAFETY: registers a plain `extern "C" fn` that only touches statics set before it.
         unsafe { libc::atexit(remove_owned_tmp) };
     }
     Ok(t)
@@ -726,8 +768,7 @@ static OWNED_LOCK: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new
 
 /// An exclusive lock on `f`, without waiting.
 fn try_lock(f: &std::fs::File) -> bool {
-    use std::os::fd::AsRawFd;
-    unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 }
+    f.try_lock().is_ok()
 }
 
 extern "C" fn remove_owned_tmp() {
@@ -792,6 +833,7 @@ fn ca_bundle() -> Option<PathBuf> {
 }
 
 fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<String, String>) -> Result<i32> {
+    // SAFETY: setting a disposition, before the VM's threads exist.
     unsafe { libc::signal(libc::SIGPIPE, libc::SIG_IGN) };
     // Before any VM thread exists, so they all inherit the mask and only the forwarder sees them.
     let signal_set = signals::block();
@@ -850,6 +892,8 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     for (host, guest, ro) in &o.mounts {
         mounts.push(Mount { guest: guest.clone(), backend: Backend::Host { path: host.clone(), ro: *ro } });
     }
+    // The programs the app may start, where os:find_executable looks for them.
+    mounts.extend(o.policy.exec.mounts(&[APP, "/proc", "/tmp"]));
 
     // A later -S wins, so vm.args overrides the default and --schedulers overrides vm.args.
     let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
@@ -905,6 +949,8 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     let mut linker: Linker<Ctx> = Linker::new(&engine);
     wasi::add(&mut linker)?;
     net::add(&mut linker)?;
+    spawn::add(&mut linker)?;
+    wasi::add_ampoule_os(&mut linker)?;
     threads::add(&mut linker)?;
     let store = Store::new(&engine, Ctx { k: kernel.clone() });
     linker.define(&store, "env", "memory", memory)?;

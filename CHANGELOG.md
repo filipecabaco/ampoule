@@ -5,6 +5,37 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Host programs: ports, `System.cmd/3` and `:os.cmd/1` start the host programs listed in
+  `[process] allow` in `ampoule.toml` (or `--allow-exec`, `AMPOULE_ALLOW_EXEC`), on macOS and
+  Linux. Names are looked up on `PATH`, and `*` allows everything on it. Each allowed program is
+  mounted read-only at its host path, so `System.find_executable/1` finds it. Nothing is allowed by
+  default, and a program outside the list fails with `:eacces`.
+- Unix domain sockets: `{:local, path}` with `gen_tcp` and `gen_udp`, at the app's own paths. A
+  socket the app binds lands in a directory it may write; it can connect to sockets its mounts show,
+  host services included. Abstract names are refused.
+- The memory alarm: `start` sets OTP's `{:system_memory_high_watermark, []}` through
+  `:alarm_handler` at 80% of the VM's memory limit and clears it 10 points lower (`memory_alarm`,
+  `--memory-alarm`, `AMPOULE_MEMORY_ALARM`). `/proc/meminfo` reports the limit as `MemTotal`.
+- `restart = "on-failure"` (`--restart`, `AMPOULE_RESTART`): `start` starts a VM that exits non-zero,
+  out of memory included, again after a backoff, keeping its listeners open in between; after 5
+  failures in 5 minutes it exits with the VM's status.
+
+- `File.chmod/2` (and `:file.write_file_info/2`'s mode) sets the mode of the host file behind a
+  writable path; it failed with `:enosys`. setuid and setgid bits are dropped, so a guest running
+  as root cannot leave a setuid-root program where the host can run it.
+
+### Fixed
+
+- `System.pid/0` (`os:getpid/0`) is the host pid of the process running the VM, which `ps` lists and
+  `kill` reaches; it was always `"42"`, wasi-libc's stand-in.
+- `File.stat/1` reports permission bits (`mode`) for files the app can see; it reported only the
+  file type.
+- `dup/1` works for NIFs; wasi-libc's returned `ENOTSUP`.
+- `File.mkdir/1` on an existing mount point, `/app` or a directory joining mounts returns `:eexist`
+  instead of `:erofs` or `:ebusy`, so `File.mkdir_p/1` works for paths that already exist there.
+
 ## [0.1.3] - 2026-10-15
 
 ### Added
