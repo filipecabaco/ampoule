@@ -52,9 +52,9 @@ typography:
     lineHeight: 1.4
   code:
     fontFamily: "JetBrains Mono, ui-monospace, SF Mono, Menlo, monospace"
-    fontSize: "0.82rem"
+    fontSize: "0.9rem"
     fontWeight: 400
-    lineHeight: 1.7
+    lineHeight: 1.65
 rounded:
   hairline: "3px"
   part: "4px"
@@ -136,17 +136,17 @@ Tone is plain and positive. The page shows what ampoule does; it never sets ampo
 ### Hierarchy
 - **Display** (700, `clamp(4rem, 9vw, 6rem)`, line-height 0.85, -0.035em): the name on the cover, once.
 - **Numeral** (700, up to 5.25rem inside an 8rem circle with a 6px stroke): ① and ②. They outweigh every heading on the sheet.
-- **Headline** (700, up to 2.75rem): sheet titles ("Steps 3 to 9", "Before you start", "Test report").
+- **Headline** (700, up to 2.75rem): sheet titles ("When you need more", "Before you start", "Test report").
 - **Title** (700, up to 1.9rem): step titles.
 - **Claim** (600, up to 1.75rem): the one-line offer under the name.
 - **Body** (400, 1.0625rem/1.55, tabular numerals): prose, 62–75ch.
-- **Code** (JetBrains Mono, 0.82rem/1.7): command plates.
+- **Code** (JetBrains Mono, 0.9rem/1.65, 0.8rem on phones): command plates. Code inside a plate inherits the plate's size; only inline code is set smaller (0.86em).
 
 ## Layout
 
 - Masthead strip (mark, part number `AM–0061736D`, links) over a 3px rule.
 - Sheet one is a two-column grid (`0.85fr 1.35fr`): the purple cover (name, claim, part card, facts line at its foot) beside the two steps. Each step is a grid of numeral and pictogram (left) and body (right).
-- Then full-width sheets, each closed by a 3px rule: the real output specimen, Steps 3–9 (two columns), Before you start, the exploded drawing, the Test report (bench rig, scaling chart, measurements in the specification table's form), Specifications, and the back cover with `ampoule release` again.
+- Then full-width sheets, each closed by a 3px rule: the real output specimen, Before you start (limits come before anything optional), When you need more (optional fittings in three groups), the exploded drawing, the Test report (bench rig, scaling chart, measurements in the specification table's form), Specifications, and the back cover with `ampoule release` again.
 - Side gutter `clamp(1rem, 4vw, 3rem)`; sheets pad `clamp(3rem, 6vw, 5rem)` vertically.
 - Below 1020px sheet one stacks (cover on top). Below 640px each step puts the numeral and its pictogram side by side above the body, the exploded drawing switches to its vertical version, and the spec table becomes stacked rows.
 
@@ -163,22 +163,25 @@ Pictograms are authored geometry: a filled circle head, an 18-unit body stroke, 
 ## Components
 
 ### Step numeral
-A circle with a 6px ink stroke and a 700-weight digit, upright and optically centred: no letter-spacing on the single digit, and `padding-bottom: 0.13em` puts its ink within 1px of the circle's centre at every size (measured on renders; the OG card uses 12.5px at its 84px digits). Copying a step's command fills it wasm blue with a white digit; it never tilts. The small variant (3.25rem, 3px stroke) numbers Steps 3–9; the back cover repeats ① at 4.75rem.
+A circle with a 6px ink stroke and a 700-weight digit, upright and optically centred: no letter-spacing on the single digit, and `padding-bottom: 0.13em` puts its ink within 1px of the circle's centre at every size (measured on renders; the OG card uses 12.5px at its 84px digits). Copying a step's command fills it wasm blue with a white digit; it never tilts. Only the two real steps are numbered; the back cover repeats ① at 4.75rem.
 
 ### Scaling chart
 The Test report's one chart, drawn like the sheet: a 1.5px ink axis, 1px hairline gridlines, the ideal as a dashed ink line, the measured series as the page's single blue line (2.5 units, round joins) with 5-unit blue markers ringed in white, and one direct label on the endpoint. A dotted divider marks where the performance cores end. Each marker carries a `<title>`; the table beneath carries every value. Below 640px the labels grow in chart units so they print at about 12px.
 
 ### Command plate
-A 1.5px ink outline on white, mono text, `$` prompt in Elixir purple, with the copy button docked on the right edge (ink fill, white label, copy icon). Hover turns the button wasm blue. On success the label reads "Copied" and the icon becomes a check for 1.8 s; if the clipboard is refused the text is selected and the label reads "Selected".
+A 1.5px ink outline on white, mono text, `$` prompt in Elixir purple, with the copy button docked on the right edge (ink fill, white label, copy icon); below 640px it docks under the command as a full-width bar. Long commands break with a shell `\` continuation, never mid-token. Copying takes the commands only: no `$` prompts, no output lines. Hover turns the button wasm blue. On success the label reads "Copied" and the icon becomes a check for 1.8 s; if the clipboard is refused the text is selected and the label reads "Selected". A visually hidden live region announces both.
 
 ### Target chips
-Pills with a 1.5px ink outline. The checked chip is wasm blue with white text; hover is lavender wash. The "Download for" label sits on its own line above them.
+Pills with a 1.5px ink outline. The checked chip is wasm blue with white text; hover is lavender wash. Two rows in step 1, each with its label on its own line above: "Pack on" (the visitor's machine, guessed from the browser: what the install downloads) and "Run on" (default Linux x86_64: the `--target`, the extra runtime download when it differs, step 2's file name and the part card's name). Every command on sheet one follows these two choices, so what the page shows always runs as written.
 
 ### The part card
 The single item in the inventory: lavender wash, 3px wasm-blue border, the mark at 4rem, the file name in mono, a one-sentence description, and a solid blue ×1 tab.
 
 ### Exploded drawing
 An inline SVG of the file: five outlined sections (4-unit ink stroke) pulled apart along a dashed axis, hairline detail inside, the release image filled wasm blue, the optional engine section dashed, dashed leaders down to circled callouts that match the numbered legend below. A vertical version replaces it on phones.
+
+### Optional fittings
+"When you need more" holds what a visitor may add after the two steps. None is numbered: numerals belong to steps, and these are not. Three groups (Running it, Shipping it, Reaching the host), each under a 3px rule with its title in a sticky left column; inside, each fitting is one row, its title and text on the left and its command plates on the right, rows split by 1.5px hairlines. Below 1020px the group title sits above its rows; below 640px each row stacks text over code.
 
 ### Do / don't columns
 "Works" (lavender wash) and "Does not work" (white) inside one 3px-ruled panel, each headed by a drawn circled ✓ or ✗ symbol.

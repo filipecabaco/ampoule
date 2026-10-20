@@ -79,7 +79,7 @@ code, pre { font-family: var(--mono); font-size: 0.86em; }
   overflow-wrap: anywhere;
 }
 
-h1, h2, h3 { margin: 0; text-wrap: balance; }
+h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
 p, ul, ol { margin: 0; }
 
 .defs { position: absolute; width: 0; height: 0; overflow: hidden; }
@@ -335,8 +335,8 @@ p, ul, ol { margin: 0; }
 .cmd {
   margin: 0;
   padding: 0.85rem 1rem;
-  font-size: 0.82rem;
-  line-height: 1.7;
+  font-size: 0.9rem;
+  line-height: 1.65;
   /* Commands and output are shown as a terminal prints them: `==>` stays three characters. */
   font-variant-ligatures: none;
   white-space: pre-wrap;
@@ -345,6 +345,9 @@ p, ul, ol { margin: 0; }
 }
 
 .plate .cmd { flex: 1; min-width: 0; }
+/* The plate sets the size; code inside it does not shrink again. */
+.cmd code { font-size: inherit; }
+.step .cmd { font-size: 0.9rem; }
 
 .cmd .p { color: var(--elixir); font-weight: 700; user-select: none; }
 .cmd .o { color: var(--ink-soft); }
@@ -370,7 +373,7 @@ p, ul, ol { margin: 0; }
 .copy:active { transform: translateY(1px); }
 .copy:focus-visible { outline-offset: -5px; outline-color: var(--paper); box-shadow: none; }
 
-.note { font-size: 0.9rem; color: var(--ink-soft); }
+.note, .needs { font-size: 0.9rem; color: var(--ink-soft); }
 
 .done { display: flex; align-items: center; gap: 0.6rem; font-size: 1.15rem; font-weight: 700; }
 .done svg { width: 2.25rem; height: 2.25rem; flex: none; }
@@ -379,7 +382,7 @@ p, ul, ol { margin: 0; }
 
 .proof { padding: clamp(2.5rem, 5vw, 4rem) var(--gutter); border-bottom: var(--line) solid var(--ink); }
 
-.specimen { margin: 0 auto; max-width: 62rem; display: grid; gap: 1rem; }
+.specimen { margin: 0; max-width: 62rem; display: grid; gap: 1rem; }
 
 .specimen .cmd {
   border: var(--line) solid var(--ink);
@@ -407,23 +410,39 @@ p, ul, ol { margin: 0; }
   margin-bottom: clamp(1.75rem, 3vw, 2.5rem);
 }
 
-.more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 0 clamp(2rem, 5vw, 4rem); }
-.more .sheet-title { grid-column: 1 / -1; }
+/* When you need more: optional fittings in three groups, each a row of text and its command. */
+.more .sheet-title { margin-bottom: 0.75rem; }
+.more-lede { font-size: clamp(1.1rem, 1.6vw, 1.3rem); color: var(--ink-soft); max-width: 62ch; margin-bottom: clamp(2rem, 4vw, 3rem); }
 
-.step-page {
+.fit-group {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 1.25rem;
-  padding-block: 1.75rem;
-  border-top: var(--hair) solid var(--ink);
+  grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr);
+  gap: 0 clamp(1.5rem, 4vw, 3.5rem);
+  border-top: var(--line) solid var(--ink);
+}
+.fit-group + .fit-group { margin-top: clamp(1.5rem, 3vw, 2.5rem); }
+.fit-group > h3 {
+  font-size: clamp(1.45rem, 2.4vw, 1.9rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  padding-top: 1.5rem;
+  align-self: start;
+  position: sticky;
+  top: 1rem;
 }
 
-.step-page > div { display: grid; gap: 0.85rem; align-content: start; min-width: 0; }
-.step-page h3 { font-size: 1.3rem; font-weight: 700; line-height: 1.2; margin-top: 0.35rem; }
-.step-page p { max-width: 62ch; }
-.step-page .cmd { border: var(--hair) solid var(--ink); border-radius: 6px; }
-
-.step-no.small { width: 3.25rem; height: 3.25rem; border-width: 3px; font-size: 1.85rem; }
+.fit {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 1rem clamp(1.5rem, 3vw, 2.5rem);
+  padding-block: 1.5rem;
+}
+.fit + .fit { border-top: var(--hair) solid var(--ink); }
+.fit-text, .fit-code { display: grid; gap: 0.75rem; align-content: start; min-width: 0; }
+.fit h4 { font-size: 1.3rem; font-weight: 700; line-height: 1.2; }
+.fit p { max-width: 62ch; }
+.fit .cmd { border: var(--hair) solid var(--ink); border-radius: 6px; }
 
 .back-cmd .step-no { width: 4.75rem; height: 4.75rem; border-width: 4px; font-size: 3rem; }
 
@@ -582,7 +601,8 @@ p, ul, ol { margin: 0; }
 @media (max-width: 1020px) {
   .sheet-one { grid-template-columns: 1fr; }
   .cover { border-right: 0; border-bottom: var(--line) solid var(--ink); }
-  .more { grid-template-columns: 1fr; }
+  .fit-group { grid-template-columns: 1fr; }
+  .fit-group > h3 { position: static; padding-top: 1.25rem; }
   .file { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.5rem; row-gap: 1.25rem; }
   .draw-wide:not(.draw-tall) { display: none; }
   .draw-tall { display: block; width: 12rem; }
@@ -604,6 +624,8 @@ p, ul, ol { margin: 0; }
   .picto { grid-column: 2; grid-row: 1; margin-top: 0; }
   .step-body { grid-column: 1 / -1; grid-row: 2; }
 
+  .fit { grid-template-columns: 1fr; }
+
   .rules-grid { grid-template-columns: 1fr; }
   .rule-col + .rule-col { border-left: 0; border-top: var(--line) solid var(--ink); }
 
@@ -616,7 +638,11 @@ p, ul, ol { margin: 0; }
   .back-cmd { grid-template-columns: 1fr; }
   .back-install { grid-column: 1; }
 
-  .specimen .cmd { padding: 1rem; font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .specimen .cmd { padding: 1rem; font-size: 0.8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .cmd, .step .cmd { font-size: 0.8rem; }
+  /* The copy control docks under the command, so the command gets the full width. */
+  .plate { flex-direction: column; }
+  .copy { justify-content: center; padding: 0.7rem 1rem; border-left: 0; border-top: var(--hair) solid var(--ink); }
 
   /* The chart scales as a whole; its labels grow in chart units so they still print at about 12px. */
   .scaling text { font-size: 28px; }
