@@ -24,9 +24,12 @@ impl Mem {
         self.memory.data().as_ptr() as *mut u8
     }
 
-    /// The guest's memory size in bytes.
+    /// The guest's memory size in bytes. From the slice `data()` returns, not `data_size()`, which
+    /// takes the memory's lock: every bounds check calls this, from every guest thread, and that
+    /// lock was the hottest point of the runtime under load. Shared memory never shrinks, so a
+    /// length read here stays valid.
     pub fn size(&self) -> usize {
-        self.memory.data_size()
+        self.memory.data().len()
     }
 
     /// The most the guest's memory can grow to, in bytes: `--memory-max`, or wasm32's 4 GiB.

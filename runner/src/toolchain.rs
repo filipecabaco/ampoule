@@ -55,6 +55,12 @@ impl Toolchain {
         ["libc++.a", "libc++abi.a", "libunwind.a"].iter().map(|l| dir.join(l)).collect()
     }
 
+    /// The LLVM this wasi-sdk ships, from its VERSION file ("llvm-version: 23.1.0").
+    pub fn llvm_version(&self) -> Option<String> {
+        let text = std::fs::read_to_string(self.wasi_sdk.join("VERSION")).ok()?;
+        text.lines().find_map(|l| l.strip_prefix("llvm-version:")).map(|v| v.trim().to_string())
+    }
+
     pub fn ar(&self) -> PathBuf {
         self.wasi_sdk.join("bin/llvm-ar")
     }

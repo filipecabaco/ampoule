@@ -48,6 +48,21 @@ struct Kit {
     objects: Vec<String>,
     archives: Vec<String>,
     system_libs: Vec<String>,
+    /// The LLVM the kit's objects were built with. They are LLVM bitcode (link-time optimisation),
+    /// which only that LLVM can link. Absent in kits from before LTO.
+    #[serde(default)]
+    llvm_version: Option<String>,
+}
+
+/// A bitcode kit links only with the LLVM that built it; say so up front, not as a linker error.
+fn check_llvm(kit: Option<&str>, sdk: Option<&str>) -> Result<()> {
+    match (kit, sdk) {
+        (Some(want), Some(have)) if want != have => bail!(
+            "the engine kit was built with LLVM {want}, but this wasi-sdk has LLVM {have}: use the wasi-sdk the kit was built with (wasi-sdk 34 for this ampoule; AMPOULE_WASI_SDK)"
+        ),
+        (Some(want), None) => bail!("the engine kit needs LLVM {want}, and this wasi-sdk does not say which LLVM it has (no VERSION file)"),
+        _ => Ok(()),
+    }
 }
 
 /// `/lib/<app>-<vsn>/<rel>` paths of foreign native files, as NIFs to build.
@@ -396,6 +411,7 @@ fn enif_lookup(tc: &Toolchain, work: &Path) -> Result<PathBuf> {
 /// Link beam.wasm from the engine kit plus `nifs`.
 pub fn link_engine(tc: &Toolchain, nifs: &[BuiltNif], work: &Path) -> Result<Vec<u8>> {
     let kit: Kit = serde_json::from_slice(&std::fs::read(tc.kit.join("kit.json"))?).context("reading kit.json")?;
+    check_llvm(kit.llvm_version.as_deref(), tc.llvm_version().as_deref())?;
     std::fs::create_dir_all(work)?;
 
     let table = std::fs::read_to_string(tc.kit.join("driver_tab.i"))?;
@@ -450,9 +466,22 @@ fn triple(target: &str) -> Result<&'static str> {
 
 /// beam.wasm compiled to native code for `target`, compressed as the runtime expects.
 pub fn precompile(wasm: &[u8], target: &str) -> Result<Vec<u8>> {
-    let mut cfg = crate::engine::config();
-    cfg.target(triple(target)?)?;
+    let cfg = crate::engine::for_target(triple(target)?)?;
     let engine = wasmtime::Engine::new(&cfg)?;
     let native = engine.precompile_module(wasm).map_err(|e| anyhow::anyhow!("precompiling the engine for {target}: {e:?}"))?;
     Ok(zstd::bulk::compress(&native, 9)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_llvm;
+
+    #[test]
+    fn a_bitcode_kit_links_only_with_its_own_llvm() {
+        assert!(check_llvm(Some("23.1.0"), Some("23.1.0")).is_ok());
+        assert!(check_llvm(Some("23.1.0"), Some("22.1.0")).is_err());
+        assert!(check_llvm(Some("23.1.0"), None).is_err());
+        // Kits from before LTO name no LLVM and link with any.
+        assert!(check_llvm(None, Some("22.1.0")).is_ok());
+    }
 }

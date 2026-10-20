@@ -21,8 +21,7 @@ fn main() {
     println!("cargo:rerun-if-changed={}", beam.display());
     let wasm =
         std::fs::read(&beam).unwrap_or_else(|e| panic!("{}: {e}\nbuild the engine first (`elixir scripts/engine.exs`) or set AMPOULE_BEAM", beam.display()));
-    let mut cfg = engine::config();
-    cfg.target(&target).expect("wasmtime target");
+    let cfg = engine::for_target(&target).expect("wasmtime target");
     let native = wasmtime::Engine::new(&cfg).expect("wasmtime engine").precompile_module(&wasm).expect("precompiling beam.wasm");
     std::fs::write(out.join("beam.cwasm.zst"), zstd::bulk::compress(&native, 9).expect("zstd")).expect("writing the engine");
 
