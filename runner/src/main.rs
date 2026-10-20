@@ -7,6 +7,7 @@
 //! Without a payload it is the packaging CLI (`release`, `pack`, `run`); `pack` appends a
 //! release to a copy of itself, and that copy is the app (`start`, `serve`, `eval`, ...).
 
+mod cache;
 mod config;
 mod engine;
 mod errno;
@@ -308,8 +309,22 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
             let natives = nif::natives(&stats.foreign_native);
             let linked = (|| -> Result<_> {
                 let built = nif::build(&project, &mix_env, &natives, &tc)?;
-                eprintln!("==> linking the engine with {} NIF(s): {}", built.len(), built.iter().map(|b| b.libname.as_str()).collect::<Vec<_>>().join(", "));
-                let wasm = nif::link_engine(&tc, &built, &project.join("_build/ampoule-nif/engine"))?;
+                let names = built.iter().map(|b| b.libname.as_str()).collect::<Vec<_>>().join(", ");
+                let cached = cache::dir().map(|d| cache::key(&tc, &built).map(|k| (d, k))).transpose()?;
+                let wasm = match cached.as_ref().and_then(|(d, k)| cache::get(d, k)) {
+                    Some(wasm) => {
+                        eprintln!("==> engine with {} NIF(s) from the cache: {names}", built.len());
+                        wasm
+                    },
+                    None => {
+                        eprintln!("==> linking the engine with {} NIF(s): {names}", built.len());
+                        let wasm = nif::link_engine(&tc, &built, &project.join("_build/ampoule-nif/engine"))?;
+                        if let Some((d, k)) = &cached {
+                            cache::put(d, k, &wasm);
+                        }
+                        wasm
+                    },
+                };
                 Ok((wasm, built.iter().map(|b| b.libname.clone()).collect()))
             })();
             // Whether the build worked or not: the project copy is not left under _build.

@@ -51,6 +51,11 @@ force-included into every ERTS and NIF compile. It maps the POSIX calls wasi-lib
 The runner's `build.rs` precompiles `build/engine/beam.wasm` (or `AMPOULE_BEAM`) for the target
 and embeds it in the binary.
 
+Packing caches the engine relinked with an app's NIFs (`runner/src/cache.rs`). The key covers the
+kit, the wasi-sdk and the `ampoule` version, but not the code in `runner/src/nif.rs` that drives
+the link: when changing how the engine is linked, pack with `AMPOULE_NO_CACHE=1`, or the old
+engine comes back from the cache.
+
 ## Tests
 
 | | What it checks |

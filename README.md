@@ -427,6 +427,12 @@ another. `ampoule` looks for them in `AMPOULE_WASI_SDK` and `AMPOULE_KIT`, then 
 executable (`wasi-sdk/`, `../wasi-sdk`, `kit/`), then under `~/.cache/ampoule/`. Release archives
 include the kit.
 
+The relinked engine is kept in `~/.cache/ampoule/engines/`, under a hash of everything the link
+reads: the kit, the wasi-sdk version, the `ampoule` version, and each NIF's built archive. Packing
+again with the same NIFs skips the link, which is most of a pack (examples/c_nif: 13 s, then
+1.3 s), and gives the same binary. The NIFs themselves are still built on every pack. The eight
+most recently used engines are kept, and `AMPOULE_NO_CACHE=1` links without the cache.
+
 Tested with C (eiconv, and SQLite through `exqlite`: see [`examples/sqlite`](examples/sqlite)), C
 with setjmp/longjmp (libpg_query, through `pg_query_ex`), C++ with exceptions (snappy,
 prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have one native library.

@@ -10,6 +10,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - NIFs in the project's own C or C++ code (`c_src/` with `elixir_make`, or any Mix compiler that
   runs `$(CC)`) are rebuilt for wasm when packing, as the project's own Rust NIFs in `native/`
   already were. Before, packing failed with "neither a dependency nor has native/".
+- The engine relinked with an app's NIFs is cached in `~/.cache/ampoule/engines/`, keyed by a
+  hash of everything the link reads, so packing again with the same NIFs skips the link and gives
+  the same binary (examples/c_nif: 13.1 s → 1.3 s; rustler 16.9 s → 4.6 s; sqlite 22.2 s → 10.6 s,
+  the rest being SQLite's build). `AMPOULE_NO_CACHE=1` turns it off.
 
 ### Fixed
 
