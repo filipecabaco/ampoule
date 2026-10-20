@@ -2,3 +2,6 @@
 
 [network]
 listen = [4000]   # the only port the app may bind; map it with --port-map 4000:8080
+
+[process]
+allow = ["uname", "/bin/sh"]   # the only host programs the app may start

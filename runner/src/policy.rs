@@ -1,5 +1,6 @@
 //! What the guest's sockets may do. Configured from the manifest's [network] table,
 //! AMPOULE_* environment variables and flags; everything not restricted passes through.
+//! Host processes are the exception: the guest runs only what `exec` allows (see `spawn`).
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
@@ -15,6 +16,8 @@ pub struct Policy {
     pub listen_host: Option<IpAddr>,
     pub deny_connect: Vec<SocketAddr>,
     pub rewrite_connect: Vec<(SocketAddr, SocketAddr)>,
+    /// Host programs the guest may start (empty: none).
+    pub exec: crate::spawn::Exec,
 }
 
 impl Policy {

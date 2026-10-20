@@ -25,6 +25,14 @@
 #include <errno.h>
 #include <sys/types.h>
 #ifndef AMPOULE_OS_NO_NET
+/* wasi-libc's sockaddr_un has no sun_path, WASI having no unix sockets. The runtime provides them
+ * (runner/src/unix.rs) with Linux's layout, defined here first so wasi-libc's header stands aside. */
+#include <__typedef_sa_family_t.h>
+#define __wasilibc___struct_sockaddr_un_h
+struct sockaddr_un {
+    sa_family_t sun_family;
+    char sun_path[108];
+};
 #include <sys/socket.h>
 #include <netinet/in.h>
 #endif
@@ -310,10 +318,22 @@ AOS_IMPORT(shutdown) int32_t __aos_shutdown(int32_t fd, int32_t how);
 AOS_IMPORT(pipe) int32_t __aos_pipe(int32_t *fds);
 AOS_IMPORT(ioctl_int) int32_t __aos_ioctl_int(int32_t fd, int32_t request, int32_t *arg);
 AOS_IMPORT(gethostname) int32_t __aos_gethostname(char *name, uint32_t len);
+/* The runtime's host pid, so os:getpid/0 names a process host tools (ps, kill) can find; wasi-libc's
+ * emulated getpid returns a constant. */
+AOS_IMPORT(getpid) int32_t __aos_getpid(void);
 AOS_IMPORT(thread_exit) __attribute__((noreturn)) void __aos_thread_exit(void);
 /* The write end of ERTS's signal-dispatcher pipe: the runtime writes host signals (SIGTERM,
  * SIGINT, ...) into it as the guest's signal numbers, as a signal handler would. */
 AOS_IMPORT(signal_fd) void __aos_signal_fd(int32_t fd);
+/* wasi-libc's dup() is a stub returning ENOTSUP; the runtime shares the entry under a new fd. */
+AOS_IMPORT(dup) int32_t __aos_dup(int32_t fd);
+/* The runtime plays erl_child_setup for the spawn driver. `forker` returns the read end of the
+ * pipe it writes SigChld messages to; `forker_write` takes a Start request and its fds (the
+ * runtime keeps its own references, so the caller closes them as after a sendmsg). */
+AOS_IMPORT(forker) int32_t __aos_forker(void);
+AOS_IMPORT(forker_write) int32_t __aos_forker_write(int32_t fd, const void *buf, uint32_t len, const int32_t *fds, uint32_t nfds);
+/* The permission bits of an absolute guest path, which a WASI filestat does not carry. */
+AOS_IMPORT(path_mode) int32_t __aos_path_mode(const char *path, uint32_t len, int32_t follow);
 
 static inline __attribute__((noreturn)) void aos_pthread_exit(void *res) { (void)res; __aos_thread_exit(); }
 static inline int aos_pthread_sigmask(int how, const void *set, void *oset) { (void)how; (void)set; (void)oset; return 0; }
@@ -331,22 +351,33 @@ static inline int __aos_ret(int32_t r) {
 
 #ifndef AMPOULE_OS_NO_NET
 static inline int aos_socket(int d, int t, int p) { return __aos_ret(__aos_socket(d, t, p)); }
-static inline int aos_bind(int fd, const struct sockaddr *a, socklen_t l) { return __aos_ret(__aos_bind(fd, a, l)); }
+const void *aos_unix_abs(const void *addr, unsigned *len, void *buf);
+static inline int aos_bind(int fd, const struct sockaddr *a, socklen_t l) { struct sockaddr_un u; a = (const struct sockaddr *)aos_unix_abs(a, (unsigned *)&l, &u); return __aos_ret(__aos_bind(fd, a, l)); }
 static inline int aos_listen(int fd, int b) { return __aos_ret(__aos_listen(fd, b)); }
 static inline int aos_accept(int fd, struct sockaddr *a, socklen_t *l) { return __aos_ret(__aos_accept(fd, a, (uint32_t *)l)); }
-static inline int aos_connect(int fd, const struct sockaddr *a, socklen_t l) { return __aos_ret(__aos_connect(fd, a, l)); }
+static inline int aos_connect(int fd, const struct sockaddr *a, socklen_t l) { struct sockaddr_un u; a = (const struct sockaddr *)aos_unix_abs(a, (unsigned *)&l, &u); return __aos_ret(__aos_connect(fd, a, l)); }
 static inline int aos_getsockopt(int fd, int lv, int n, void *v, socklen_t *l) { return __aos_ret(__aos_getsockopt(fd, lv, n, v, (uint32_t *)l)); }
 static inline int aos_setsockopt(int fd, int lv, int n, const void *v, socklen_t l) { return __aos_ret(__aos_setsockopt(fd, lv, n, v, l)); }
 static inline int aos_getsockname(int fd, struct sockaddr *a, socklen_t *l) { return __aos_ret(__aos_getsockname(fd, a, (uint32_t *)l)); }
 static inline int aos_getpeername(int fd, struct sockaddr *a, socklen_t *l) { return __aos_ret(__aos_getpeername(fd, a, (uint32_t *)l)); }
 static inline ssize_t aos_recvfrom(int fd, void *b, size_t n, int f, struct sockaddr *a, socklen_t *l) { return __aos_ret(__aos_recvfrom(fd, b, n, f, a, (uint32_t *)l)); }
-static inline ssize_t aos_sendto(int fd, const void *b, size_t n, int f, const struct sockaddr *a, socklen_t l) { return __aos_ret(__aos_sendto(fd, b, n, f, a, l)); }
+static inline ssize_t aos_sendto(int fd, const void *b, size_t n, int f, const struct sockaddr *a, socklen_t l) { struct sockaddr_un u; a = (const struct sockaddr *)aos_unix_abs(a, (unsigned *)&l, &u); return __aos_ret(__aos_sendto(fd, b, n, f, a, l)); }
 static inline ssize_t aos_recv(int fd, void *b, size_t n, int f) { return aos_recvfrom(fd, b, n, f, NULL, NULL); }
 static inline ssize_t aos_send(int fd, const void *b, size_t n, int f) { return aos_sendto(fd, b, n, f, NULL, 0); }
 #endif
 static inline int aos_shutdown(int fd, int how) { return __aos_ret(__aos_shutdown(fd, how)); }
 static inline int aos_pipe(int fds[2]) { return __aos_ret(__aos_pipe(fds)); }
 static inline int aos_gethostname(char *n, size_t l) { return __aos_ret(__aos_gethostname(n, l)); }
+static inline pid_t aos_getpid(void) { return (pid_t)__aos_getpid(); }
+static inline int aos_dup(int fd) { return __aos_ret(__aos_dup(fd)); }
+static inline int aos_forker(void) { return __aos_ret(__aos_forker()); }
+static inline ssize_t aos_forker_write(int fd, const void *b, size_t n, const int *fds, int nfds) {
+    return __aos_ret(__aos_forker_write(fd, b, n, (const int32_t *)fds, nfds));
+}
+unsigned aos_path_mode(const char *path, int follow);
+/* WASI has no chmod; these set the mode on the host file (src/aos.c). */
+int aos_chmod(const char *path, mode_t mode);
+int aos_fchmod(int fd, mode_t mode);
 static inline int aos_getrlimit(int res, struct rlimit *r) {
     if (res != RLIMIT_NOFILE) { errno = EINVAL; return -1; }
     r->rlim_cur = r->rlim_max = 4096;
@@ -447,6 +478,8 @@ static inline ssize_t aos_sendmsg(int fd, const struct msghdr *m, int f) { (void
 #endif
 #define pipe aos_pipe
 #define gethostname aos_gethostname
+#define getpid aos_getpid
+#define dup(fd) aos_dup(fd)
 #define pthread_exit aos_pthread_exit
 #define pthread_sigmask aos_pthread_sigmask
 #define sigprocmask aos_sigprocmask
@@ -471,6 +504,8 @@ static inline ssize_t aos_sendmsg(int fd, const struct msghdr *m, int f) { (void
 #define geteuid aos_geteuid
 #define getgid aos_getgid
 #define getegid aos_getegid
+#define chmod(p, m) aos_chmod(p, m)
+#define fchmod(fd, m) aos_fchmod(fd, m)
 #define chown aos_chown
 #define fchown aos_fchown
 #define fork aos_fork

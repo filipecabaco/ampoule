@@ -17,6 +17,22 @@ index d5b3b9d..9162b34 100644
  	drv_data = (*driver->start)(ERTS_Port2ErlDrvPort(port), name, opts);
  	if (((SWord) drv_data) == -1)
  	    error_type = -1;
+diff --git a/erts/emulator/nifs/unix/unix_prim_file.c b/erts/emulator/nifs/unix/unix_prim_file.c
+index 2b0a942..f6e1633 100644
+--- a/erts/emulator/nifs/unix/unix_prim_file.c
++++ b/erts/emulator/nifs/unix/unix_prim_file.c
+@@ -749,6 +749,11 @@ posix_errno_t efile_read_info(const efile_path_t *path, int follow_links, efile_
+         }
+     }
+ 
++#if defined(__wasi__)
++    /* A WASI filestat has no permission bits; os:find_executable needs them. */
++    data.st_mode |= aos_path_mode((const char*)path->data, follow_links);
++#endif
++
+     build_file_info(&data, result);
+ 
+ #ifndef NO_ACCESS
 diff --git a/erts/emulator/sys/unix/erl_unix_sys.h b/erts/emulator/sys/unix/erl_unix_sys.h
 index a63f0b4..201f37e 100644
 --- a/erts/emulator/sys/unix/erl_unix_sys.h
@@ -77,27 +93,34 @@ index 4663b68..ba01670 100644
      erts_thr_create(&sig_dispatcher_tid,
  			signal_dispatcher_thread_func,
 diff --git a/erts/emulator/sys/unix/sys_drivers.c b/erts/emulator/sys/unix/sys_drivers.c
-index c06d6b6..4c7f240 100644
+index c06d6b6..c53279c 100644
 --- a/erts/emulator/sys/unix/sys_drivers.c
 +++ b/erts/emulator/sys/unix/sys_drivers.c
-@@ -481,6 +481,11 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name,
-     char *wd, *cwd;
-     int ifd[2], ofd[2], stderrfd;
+@@ -77,6 +77,13 @@ static Eterm forker_port;
+ #include "erl_sys_driver.h"
+ #include "sys_uds.h"
  
-+#if defined(__EMSCRIPTEN__) || defined(__wasi__)
-+    errno = ENOTSUP;
-+    return ERL_DRV_ERROR_ERRNO;
++#if defined(__wasi__)
++/* The runtime is erl_child_setup: a Start request and its fds go to it through an import, which
++ * takes its own references to the fds, as passing them over a unix socket would. */
++#undef sys_uds_write
++#define sys_uds_write(fd, buf, len, fds, nfds, flags) aos_forker_write((fd), (buf), (len), (fds), (nfds))
 +#endif
 +
-     if (pipe(ifd) < 0) return ERL_DRV_ERROR_ERRNO;
-     errno = EMFILE;		/* default for next three conditions */
-     if (ifd[0] >= sys_max_files() || pipe(ofd) < 0) {
-@@ -1598,6 +1603,11 @@ static ErlDrvData forker_start(ErlDrvPort port_num, char* name,
+ #include "erl_child_setup.h"
+ 
+ #if defined IOV_MAX
+@@ -1598,6 +1605,16 @@ static ErlDrvData forker_start(ErlDrvPort port_num, char* name,
  
      forker_port = erts_drvport2id(port_num);
  
-+#if defined(__EMSCRIPTEN__) || defined(__wasi__)
-+    forker_fd = -1;
++#if defined(__wasi__)
++    /* There is no erl_child_setup to fork: the runtime plays it. forker_fd is the pipe it
++       reports exits on, and Start requests reach it through sys_uds_write (see above). */
++    forker_fd = aos_forker();
++    if (forker_fd < 0)
++        erts_exit(ERTS_ABORT_EXIT, "Could not start the runtime's child setup: %d\n", errno);
++    SET_NONBLOCKING(forker_fd);
 +    return (ErlDrvData)port_num;
 +#endif
 +

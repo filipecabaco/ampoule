@@ -29,6 +29,12 @@ defmodule Greeter do
     }
   end)
 
+  # A host program: it runs outside the wasm guest, so it sees the real OS. Allowed in ampoule.toml.
+  get("/api/host", fn _conn ->
+    {kernel, 0} = System.cmd("uname", ["-s"])
+    %{kernel: String.trim(kernel)}
+  end)
+
   post("/api/echo", fn conn -> conn.body_params end)
 
   # Three ticks, one every 100ms, sent from a process the handler starts on join.

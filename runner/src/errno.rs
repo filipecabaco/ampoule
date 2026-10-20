@@ -133,6 +133,19 @@ pub fn last() -> i32 {
     }
 }
 
+/// A failed rustix call's host errno, translated.
+pub fn rx(e: rustix::io::Errno) -> i32 {
+    from_host(e.raw_os_error())
+}
+
+/// A failed std call's host errno, translated.
+pub fn of_io(e: &std::io::Error) -> i32 {
+    match e.raw_os_error() {
+        Some(0) | None => IO,
+        Some(e) => from_host(e),
+    }
+}
+
 /// A libc return value, or the translated errno when it signals failure.
 pub fn check(r: libc::c_int) -> Result<libc::c_int, i32> {
     if r < 0 {

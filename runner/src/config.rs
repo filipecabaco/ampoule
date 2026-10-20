@@ -5,6 +5,8 @@
 //! serve = ["migrate", { run = "seed", when = "SEED=true" }, "start"]   # `<binary> serve`
 //! vm_args = "+S :4 +SDio 2"        # VM flags as in vm.args, after the release's own
 //! idle_stop = "5m"               # `start` stops the VM after this long without connections
+//! restart = "on-failure"         # `start` starts the VM again when it fails (crash, out of memory)
+//! memory_alarm = 80              # set system_memory_high_watermark at this % of the VM's memory limit
 //!
 //! [commands]                       # extra commands: `<binary> migrate` evaluates the expression
 //! migrate = "MyApp.Release.migrate()"
@@ -19,6 +21,9 @@
 //! [network]
 //! listen = [4000]                  # the only ports the app may bind (default: any)
 //! port_map = { 4000 = 8080 }       # app port -> host port
+//!
+//! [process]
+//! allow = ["git", "/bin/sh"]       # host programs the app may start ("*": everything on PATH)
 //! ```
 
 use std::collections::BTreeMap;
@@ -62,6 +67,25 @@ pub struct Network {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct Process {
+    /// Host programs the app may start: bare names (looked up on PATH), absolute paths, or `*`.
+    #[serde(default)]
+    pub allow: Vec<String>,
+}
+
+impl Process {
+    pub fn check(allow: &[String]) -> Result<()> {
+        for entry in allow {
+            if entry != "*" && !entry.starts_with('/') && entry.contains('/') {
+                bail!("`{entry}`: allow takes program names, absolute paths or \"*\"");
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StartConfig {
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -80,12 +104,20 @@ pub struct Config {
     pub start: StartConfig,
     #[serde(default)]
     pub network: Network,
+    #[serde(default)]
+    pub process: Process,
     /// VM flags written as in vm.args, applied after the release's vm.args.
     #[serde(default)]
     pub vm_args: String,
     /// How long `start` runs without connections before stopping the VM (see `idle`).
     #[serde(default)]
     pub idle_stop: Option<String>,
+    /// "on-failure": `start` restarts a VM that fails (see `idle`); "off" (the default) does not.
+    #[serde(default)]
+    pub restart: Option<String>,
+    /// The share of the memory limit, in percent, at which `start` raises the memory alarm (0: never).
+    #[serde(default)]
+    pub memory_alarm: Option<u8>,
 }
 
 impl Config {
@@ -97,8 +129,15 @@ impl Config {
                 bail!("{}: [commands] cannot redefine the built-in `{reserved}`", path.display());
             }
         }
+        Process::check(&cfg.process.allow).with_context(|| format!("{}: [process]", path.display()))?;
         if let Some(d) = &cfg.idle_stop {
             crate::idle::parse_duration(d).with_context(|| format!("{}: idle_stop", path.display()))?;
+        }
+        if let Some(r) = &cfg.restart {
+            parse_restart(r).with_context(|| format!("{}: restart", path.display()))?;
+        }
+        if cfg.memory_alarm.is_some_and(|p| p > 100) {
+            bail!("{}: memory_alarm is a percentage (0-100)", path.display());
         }
         for step in &cfg.serve {
             let c = match step {
@@ -114,6 +153,51 @@ impl Config {
 
 pub const BUILTIN_COMMANDS: &[&str] = &["start", "serve", "eval", "vm", "info", "help"];
 
+/// `restart`: true for "on-failure", false for "off" or "no".
+pub fn parse_restart(s: &str) -> Result<bool> {
+    match s.trim() {
+        "on-failure" => Ok(true),
+        "off" | "no" | "" => Ok(false),
+        other => bail!("bad restart {other:?} (on-failure or off)"),
+    }
+}
+
+/// The default `memory_alarm`, in percent of the VM's memory limit.
+pub const MEMORY_ALARM: u8 = 80;
+
+/// An `-eval` for `start`: a process that sets OTP's `{system_memory_high_watermark, []}` alarm,
+/// as os_mon's memsup would, once the VM's memory reaches `pct` percent of its limit, and clears it
+/// 10 points lower. The limit is MemTotal in the runtime's /proc/meminfo; what counts is
+/// `erlang:memory(total)`, which falls again as memory is freed (the wasm memory itself never
+/// shrinks). memsup cannot run here: on Linux it needs a host program packing leaves out.
+pub fn memory_alarm_eval(pct: u8) -> String {
+    format!(
+        r#"Pct = {pct},
+Limit = fun() ->
+    case file:read_file("/proc/meminfo") of
+        {{ok, <<"MemTotal:", Rest/binary>>}} -> [Kb | _] = string:lexemes(Rest, " \n"), binary_to_integer(Kb) * 1024;
+        _ -> undefined
+    end
+end,
+Watch = fun Loop(Up) ->
+    Total = erlang:memory(total),
+    Next = case Limit() of
+        L when is_integer(L), not Up, Total * 100 >= L * Pct ->
+            logger:warning("ampoule: VM memory at ~B% of its ~B MiB limit; alarm system_memory_high_watermark set", [Total * 100 div L, L bsr 20]),
+            catch alarm_handler:set_alarm({{system_memory_high_watermark, []}}),
+            true;
+        L when is_integer(L), Up, Total * 100 < L * (Pct - 10) ->
+            logger:notice("ampoule: VM memory back to ~B% of its limit; alarm system_memory_high_watermark cleared", [Total * 100 div L]),
+            catch alarm_handler:clear_alarm(system_memory_high_watermark),
+            false;
+        _ -> Up
+    end,
+    receive after 500 -> Loop(Next) end
+end,
+register(ampoule_memory_alarm, spawn(fun() -> process_flag(priority, high), Watch(false) end))."#
+    )
+}
+
 /// Embedded in every packed binary (JSON), next to the release's files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
@@ -128,6 +212,9 @@ pub struct Manifest {
     pub env: BTreeMap<String, String>,
     pub start_env: BTreeMap<String, String>,
     pub network: Network,
+    /// `[process]` from ampoule.toml.
+    #[serde(default)]
+    pub process: Process,
     /// NIFs linked into the payload's engine (by library name).
     #[serde(default)]
     pub nifs: Vec<String>,
@@ -137,6 +224,12 @@ pub struct Manifest {
     /// `idle_stop` from ampoule.toml.
     #[serde(default)]
     pub idle_stop: Option<String>,
+    /// `restart` from ampoule.toml.
+    #[serde(default)]
+    pub restart: Option<String>,
+    /// `memory_alarm` from ampoule.toml.
+    #[serde(default)]
+    pub memory_alarm: Option<u8>,
 }
 
 impl Manifest {
@@ -155,9 +248,12 @@ impl Manifest {
             env: cfg.env,
             start_env: cfg.start.env,
             network: cfg.network,
+            process: cfg.process,
             nifs: Vec::new(),
             vm_args: cfg.vm_args,
             idle_stop: cfg.idle_stop,
+            restart: cfg.restart,
+            memory_alarm: cfg.memory_alarm,
         }
     }
 }
@@ -228,6 +324,27 @@ mod tests {
     #[test]
     fn config_rejects_unknown_serve_steps() {
         assert!(load("serve = [\"migrate\", \"start\"]\n").is_err());
+    }
+
+    #[test]
+    fn config_reads_process_allow() {
+        let cfg = load("[process]\nallow = [\"git\", \"/bin/sh\", \"*\"]\n").unwrap();
+        assert_eq!(cfg.process.allow, vec!["git", "/bin/sh", "*"]);
+    }
+
+    #[test]
+    fn config_rejects_relative_paths_in_process_allow() {
+        assert!(load("[process]\nallow = [\"bin/tool\"]\n").is_err());
+    }
+
+    #[test]
+    fn restart_takes_on_failure_or_off() {
+        assert!(parse_restart("on-failure").unwrap() && !parse_restart("off").unwrap() && parse_restart("always").is_err());
+    }
+
+    #[test]
+    fn config_rejects_a_memory_alarm_above_100() {
+        assert!(load("memory_alarm = 150\n").is_err() && load("memory_alarm = 75\nrestart = \"on-failure\"\n").is_ok());
     }
 
     #[test]

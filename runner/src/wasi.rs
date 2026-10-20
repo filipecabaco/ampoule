@@ -2,13 +2,17 @@
 //! same fds and mounts. Only the calls beam.wasm imports are provided.
 
 use std::ffi::CString;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::io::IsTerminal;
+use std::os::fd::{BorrowedFd, OwnedFd};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use rustix::event::{PollFd, PollFlags};
+use rustix::fs::{AtFlags, FileType, Mode, OFlags, SeekFrom, Timestamps};
+use rustix::time::Timespec;
 use wasmtime::{Caller, Linker};
 
-use crate::errno::{self, check, check_len};
+use crate::errno::{self, check_len};
 use crate::hostfs::{self, HostNode};
 use crate::kernel::{normalize, Entry, Kernel, Kind, Node};
 use crate::mem::R;
@@ -86,20 +90,22 @@ struct Stat {
     atim: u64,
     mtim: u64,
     ctim: u64,
+    /// Permission bits, which a WASI filestat cannot carry: only `path_mode` reports them.
+    mode: u32,
 }
 
 fn ts_ns(sec: i64, nsec: i64) -> u64 {
     (sec as u64).wrapping_mul(1_000_000_000).wrapping_add(nsec as u64)
 }
 
-fn filetype_of_mode(mode: libc::mode_t) -> u8 {
-    match mode & libc::S_IFMT {
-        libc::S_IFDIR => FILETYPE_DIR,
-        libc::S_IFREG => FILETYPE_REGULAR,
-        libc::S_IFLNK => FILETYPE_SYMLINK,
-        libc::S_IFSOCK => FILETYPE_SOCKET_STREAM,
-        libc::S_IFCHR => FILETYPE_CHAR,
-        libc::S_IFBLK => FILETYPE_BLOCK,
+pub(crate) fn filetype_of(t: FileType) -> u8 {
+    match t {
+        FileType::Directory => FILETYPE_DIR,
+        FileType::RegularFile => FILETYPE_REGULAR,
+        FileType::Symlink => FILETYPE_SYMLINK,
+        FileType::Socket => FILETYPE_SOCKET_STREAM,
+        FileType::CharacterDevice => FILETYPE_CHAR,
+        FileType::BlockDevice => FILETYPE_BLOCK,
         _ => FILETYPE_UNKNOWN,
     }
 }
@@ -113,35 +119,34 @@ fn node_filetype(n: &vfs::Node) -> u8 {
 }
 
 impl Stat {
-    // st_dev and st_nlink are u64 on Linux but narrower on macOS: these casts are no-ops on one
-    // platform and needed on the other.
+    // The field types of a stat differ between macOS (libc) and Linux (the kernel's own struct):
+    // these casts are no-ops on one platform and needed on the other.
     #[allow(clippy::unnecessary_cast)]
-    fn of_libc(st: &libc::stat) -> Stat {
+    fn of_stat(st: &rustix::fs::Stat) -> Stat {
         Stat {
             dev: st.st_dev as u64,
-            ino: st.st_ino,
-            filetype: filetype_of_mode(st.st_mode),
+            ino: st.st_ino as u64,
+            filetype: filetype_of(FileType::from_raw_mode(st.st_mode as _)),
             nlink: st.st_nlink as u64,
             size: st.st_size as u64,
-            atim: ts_ns(st.st_atime, st.st_atime_nsec),
-            mtim: ts_ns(st.st_mtime, st.st_mtime_nsec),
-            ctim: ts_ns(st.st_ctime, st.st_ctime_nsec),
+            atim: ts_ns(st.st_atime as i64, st.st_atime_nsec as i64),
+            mtim: ts_ns(st.st_mtime as i64, st.st_mtime_nsec as i64),
+            ctim: ts_ns(st.st_ctime as i64, st.st_ctime_nsec as i64),
+            mode: st.st_mode as u32 & 0o7777,
         }
     }
 
     fn of_node(n: &vfs::Node) -> Stat {
-        Stat { dev: EMBEDDED_DEV, ino: n.ino, filetype: node_filetype(n), nlink: 1, size: n.size, atim: 0, mtim: 0, ctim: 0 }
+        Stat { dev: EMBEDDED_DEV, ino: n.ino, filetype: node_filetype(n), nlink: 1, size: n.size, atim: 0, mtim: 0, ctim: 0, mode: n.mode & 0o7777 }
     }
 
     fn virtual_dir(guest: &str) -> Stat {
         let ino = guest.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3));
-        Stat { dev: VIRTUAL_DEV, ino, filetype: FILETYPE_DIR, nlink: 2, size: 0, atim: 0, mtim: 0, ctim: 0 }
+        Stat { dev: VIRTUAL_DEV, ino, filetype: FILETYPE_DIR, nlink: 2, size: 0, atim: 0, mtim: 0, ctim: 0, mode: 0o555 }
     }
 
-    fn of_fd(fd: i32) -> R<Stat> {
-        let mut st: libc::stat = unsafe { std::mem::zeroed() };
-        check(unsafe { libc::fstat(fd, &mut st) })?;
-        Ok(Stat::of_libc(&st))
+    fn of_fd(fd: BorrowedFd<'_>) -> R<Stat> {
+        Ok(Stat::of_stat(&rustix::fs::fstat(fd).map_err(errno::rx)?))
     }
 
     fn write(&self, k: &Kernel, buf: u32) -> R<()> {
@@ -161,18 +166,16 @@ impl Stat {
 
 /// `fstatat` flags for a host node: a mount point is a path the runtime chose, followed as is;
 /// below it the resolver has already followed what the guest asked to follow.
-fn at_flags(n: &HostNode) -> libc::c_int {
+fn at_flags(n: &HostNode) -> AtFlags {
     if n.mount_root {
-        0
+        AtFlags::empty()
     } else {
-        libc::AT_SYMLINK_NOFOLLOW
+        AtFlags::SYMLINK_NOFOLLOW
     }
 }
 
 fn stat_host(n: &HostNode) -> R<Stat> {
-    let mut st: libc::stat = unsafe { std::mem::zeroed() };
-    check(unsafe { libc::fstatat(n.dir.as_raw_fd(), n.name.as_ptr(), &mut st, at_flags(n)) })?;
-    Ok(Stat::of_libc(&st))
+    Ok(Stat::of_stat(&rustix::fs::statat(&n.dir, n.name.as_c_str(), at_flags(n)).map_err(errno::rx)?))
 }
 
 /// Stat a guest path through the mounts.
@@ -187,7 +190,17 @@ fn stat_path(k: &Kernel, guest: &str, follow: bool) -> R<Stat> {
             if crate::proc::is_dir(&path) {
                 Ok(Stat::virtual_dir(&guest))
             } else if crate::proc::read(k, &path).is_some() {
-                Ok(Stat { dev: VIRTUAL_DEV, ino: Stat::virtual_dir(&guest).ino, filetype: FILETYPE_REGULAR, nlink: 1, size: 0, atim: 0, mtim: 0, ctim: 0 })
+                Ok(Stat {
+                    dev: VIRTUAL_DEV,
+                    ino: Stat::virtual_dir(&guest).ino,
+                    filetype: FILETYPE_REGULAR,
+                    nlink: 1,
+                    size: 0,
+                    atim: 0,
+                    mtim: 0,
+                    ctim: 0,
+                    mode: 0o444,
+                })
             } else {
                 Err(errno::NOENT)
             }
@@ -197,10 +210,79 @@ fn stat_path(k: &Kernel, guest: &str, follow: bool) -> R<Stat> {
     }
 }
 
+/// The permission bits of a guest path (`ampoule_os.path_mode`).
+pub fn path_mode(k: &Kernel, guest: &str, follow: bool) -> R<u32> {
+    stat_path(k, guest, follow).map(|s| s.mode)
+}
+
+/// The mode bits a guest may set. Never setuid or setgid: a guest running as root (in a
+/// container) could otherwise leave a setuid-root program in a directory the host shares.
+const CHMOD_BITS: u32 = 0o1777;
+
+/// chmod on a guest path (`ampoule_os.chmod`), which follows symlinks within the guest's tree only.
+pub fn chmod(k: &Kernel, guest: &str, mode: u32) -> R<()> {
+    let n = host_for_write(k, guest, true, true)?;
+    chmod_node(&n, rustix::fs::Mode::from_raw_mode((mode & CHMOD_BITS) as _))
+}
+
+/// The resolver has followed every symlink the guest asked to; one at the name now was swapped in
+/// since, and is not followed, so the change cannot reach a host file outside the mounts. A mount
+/// point is a path the runtime was given, followed as is.
+#[cfg(target_os = "linux")]
+fn chmod_node(n: &HostNode, mode: rustix::fs::Mode) -> R<()> {
+    use rustix::fs::{FileType, OFlags};
+    use std::os::fd::AsRawFd;
+    let nofollow = if n.mount_root { OFlags::empty() } else { OFlags::NOFOLLOW };
+    let fd = rustix::fs::openat(&n.dir, n.name.as_c_str(), OFlags::PATH | OFlags::CLOEXEC | nofollow, rustix::fs::Mode::empty()).map_err(errno::rx)?;
+    if FileType::from_raw_mode(rustix::fs::fstat(&fd).map_err(errno::rx)?.st_mode) == FileType::Symlink {
+        return Err(errno::LOOP);
+    }
+    // An O_PATH fd cannot be fchmod-ed; its /proc/self/fd entry names exactly the file opened.
+    rustix::fs::chmod(format!("/proc/self/fd/{}", fd.as_raw_fd()), mode).map_err(errno::rx)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn chmod_node(n: &HostNode, mode: rustix::fs::Mode) -> R<()> {
+    let flags = if n.mount_root { rustix::fs::AtFlags::empty() } else { rustix::fs::AtFlags::SYMLINK_NOFOLLOW };
+    rustix::fs::chmodat(&n.dir, n.name.as_c_str(), mode, flags).map_err(errno::rx)
+}
+
+/// fchmod on a guest fd (`ampoule_os.fchmod`).
+pub fn fchmod(k: &Kernel, fd: i32, mode: u32) -> R<()> {
+    let e = k.get(fd)?;
+    match &e.kind {
+        Kind::Dir { guest } => chmod(k, guest, mode),
+        Kind::File { ro: true, .. } | Kind::Mem { .. } => Err(errno::ROFS),
+        // The runtime's own stdin/stdout/stderr are not the guest's to change.
+        Kind::Stdio(_) => Err(errno::PERM),
+        Kind::File { fd, .. } | Kind::Socket(fd) | Kind::Pipe(fd) => {
+            rustix::fs::fchmod(fd, rustix::fs::Mode::from_raw_mode((mode & CHMOD_BITS) as _)).map_err(errno::rx)
+        },
+    }
+}
+
+/// The `ampoule_os` file calls WASI lacks: permission bits, chmod and fchmod.
+pub fn add_ampoule_os(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
+    let m = "ampoule_os";
+    linker.func_wrap(m, "path_mode", |c: Caller<'_, Ctx>, path: i32, len: i32, follow: i32| -> i32 {
+        let k = k(&c);
+        crate::net::ret((|| path_mode(k, &normalize(&k.mem.str(path as u32, len as u32)?), follow != 0).map(|m| m as i32))())
+    })?;
+    linker.func_wrap(m, "chmod", |c: Caller<'_, Ctx>, path: i32, len: i32, mode: i32| -> i32 {
+        let k = k(&c);
+        crate::net::ret((|| chmod(k, &normalize(&k.mem.str(path as u32, len as u32)?), mode as u32).map(|()| 0))())
+    })?;
+    linker.func_wrap(m, "fchmod", |c: Caller<'_, Ctx>, fd: i32, mode: i32| -> i32 {
+        let k = k(&c);
+        crate::net::ret(fchmod(k, fd, mode as u32).map(|()| 0))
+    })?;
+    Ok(())
+}
+
 /// The host node a mutating call may act on. Read-only mounts, the embedded release, /proc and
 /// virtual directories refuse with ROFS; a mount point itself can be written to (`allow_root`,
 /// e.g. setting its times) but never removed, renamed or replaced (BUSY).
-fn host_for_write(k: &Kernel, guest: &str, follow: bool, allow_root: bool) -> R<HostNode> {
+pub(crate) fn host_for_write(k: &Kernel, guest: &str, follow: bool, allow_root: bool) -> R<HostNode> {
     match k.resolve(guest, follow)? {
         Node::Host(n) if n.ro => Err(errno::ROFS),
         Node::Host(n) if n.mount_root && !allow_root => Err(errno::BUSY),
@@ -214,15 +296,11 @@ fn host_for_write(k: &Kernel, guest: &str, follow: bool, allow_root: bool) -> R<
 fn fill_random(buf: &mut [u8]) -> R<()> {
     let mut at = 0;
     while at < buf.len() {
-        let r = unsafe { libc::getrandom(buf[at..].as_mut_ptr() as *mut libc::c_void, buf.len() - at, 0) };
-        if r < 0 {
-            let e = errno::last();
-            if e == errno::INTR {
-                continue;
-            }
-            return Err(e);
+        match rustix::rand::getrandom(&mut buf[at..], rustix::rand::GetRandomFlags::empty()) {
+            Ok(r) => at += r,
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(e) => return Err(errno::rx(e)),
         }
-        at += r as usize;
     }
     Ok(())
 }
@@ -230,30 +308,33 @@ fn fill_random(buf: &mut [u8]) -> R<()> {
 #[cfg(not(target_os = "linux"))]
 fn fill_random(buf: &mut [u8]) -> R<()> {
     for chunk in buf.chunks_mut(256) {
-        check(unsafe { libc::getentropy(chunk.as_mut_ptr() as *mut libc::c_void, chunk.len()) })?;
+        // SAFETY: a host buffer of at most 256 bytes, getentropy's limit. (rustix has no
+        // getentropy, and macOS no getrandom.)
+        errno::check(unsafe { libc::getentropy(chunk.as_mut_ptr() as *mut libc::c_void, chunk.len()) })?;
     }
     Ok(())
 }
 
-/// The `[atime, mtime]` pair for utimensat/futimens from WASI's timestamps and fstflags.
-fn utimens(atim: i64, mtim: i64, fst: i32) -> [libc::timespec; 2] {
-    let spec = |set: i32, now: i32, t: i64| -> libc::timespec {
+/// The access and modification times for utimensat/futimens from WASI's timestamps and fstflags.
+fn utimens(atim: i64, mtim: i64, fst: i32) -> Timestamps {
+    let spec = |set: i32, now: i32, t: i64| -> Timespec {
         if fst & now != 0 {
-            libc::timespec { tv_sec: 0, tv_nsec: libc::UTIME_NOW }
+            Timespec { tv_sec: 0, tv_nsec: rustix::fs::UTIME_NOW as _ }
         } else if fst & set != 0 {
-            libc::timespec { tv_sec: (t as u64 / 1_000_000_000) as libc::time_t, tv_nsec: (t as u64 % 1_000_000_000) as libc::c_long }
+            Timespec { tv_sec: (t as u64 / 1_000_000_000) as i64, tv_nsec: (t as u64 % 1_000_000_000) as _ }
         } else {
-            libc::timespec { tv_sec: 0, tv_nsec: libc::UTIME_OMIT }
+            Timespec { tv_sec: 0, tv_nsec: rustix::fs::UTIME_OMIT as _ }
         }
     };
-    [spec(FSTFLAGS_ATIM, FSTFLAGS_ATIM_NOW, atim), spec(FSTFLAGS_MTIM, FSTFLAGS_MTIM_NOW, mtim)]
+    Timestamps { last_access: spec(FSTFLAGS_ATIM, FSTFLAGS_ATIM_NOW, atim), last_modification: spec(FSTFLAGS_MTIM, FSTFLAGS_MTIM_NOW, mtim) }
 }
 
 /// fd_sync / fd_datasync: fsync host fds; embedded files and directories have nothing to flush.
 fn sync(k: &Kernel, fd: i32) -> R<()> {
-    match k.get(fd)?.raw() {
-        Some(raw) => check(unsafe { libc::fsync(raw) }).map(|_| ()),
-        None => Ok(()),
+    let e = k.get(fd)?;
+    match e.fd() {
+        Ok(fd) => rustix::fs::fsync(fd).map_err(errno::rx),
+        Err(_) => Ok(()),
     }
 }
 
@@ -323,30 +404,30 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         let k = k(&c);
         code((|| {
             let e = k.get(fd)?;
-            let (ft, flags, rights) = match (&e.kind, e.raw()) {
+            let (ft, flags, rights) = match (&e.kind, e.fd()) {
                 (Kind::Mem { .. }, _) => (FILETYPE_REGULAR, 0, RIGHTS_ALL_BUT_RW | RIGHTS_FD_READ),
                 (Kind::Dir { .. }, _) => (FILETYPE_DIR, 0, RIGHTS_ALL),
-                (_, Some(raw)) => {
-                    let mut ft = Stat::of_fd(raw)?.filetype;
-                    if e.is_socket() && crate::net::is_datagram(raw) {
+                (_, Ok(fd)) => {
+                    let mut ft = Stat::of_fd(fd)?.filetype;
+                    if e.is_socket() && crate::net::is_datagram(fd) {
                         ft = FILETYPE_SOCKET_DGRAM;
                     }
-                    let fl = check(unsafe { libc::fcntl(raw, libc::F_GETFL) })?;
+                    let fl = rustix::fs::fcntl_getfl(fd).map_err(errno::rx)?;
                     let mut flags = 0u16;
-                    if fl & libc::O_NONBLOCK != 0 {
+                    if fl.contains(OFlags::NONBLOCK) {
                         flags |= FDFLAGS_NONBLOCK;
                     }
-                    if fl & libc::O_APPEND != 0 {
+                    if fl.contains(OFlags::APPEND) {
                         flags |= FDFLAGS_APPEND;
                     }
-                    let rw = match fl & libc::O_ACCMODE {
-                        libc::O_RDONLY => RIGHTS_FD_READ,
-                        libc::O_WRONLY => RIGHTS_FD_WRITE,
+                    let rw = match fl & OFlags::RWMODE {
+                        m if m == OFlags::RDONLY => RIGHTS_FD_READ,
+                        m if m == OFlags::WRONLY => RIGHTS_FD_WRITE,
                         _ => RIGHTS_FD_READ | RIGHTS_FD_WRITE,
                     };
                     (ft, flags, RIGHTS_ALL_BUT_RW | rw)
                 },
-                (_, None) => return Err(errno::BADF),
+                (_, Err(e)) => return Err(e),
             };
             let buf = buf as u32;
             k.mem.ptr(buf, 24)?;
@@ -361,16 +442,11 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         let k = k(&c);
         code((|| {
             let e = k.get(fd)?;
-            let Some(raw) = e.raw() else { return Ok(()) };
-            let mut fl = check(unsafe { libc::fcntl(raw, libc::F_GETFL) })?;
-            fl &= !(libc::O_NONBLOCK | libc::O_APPEND);
-            if flags as u16 & FDFLAGS_NONBLOCK != 0 {
-                fl |= libc::O_NONBLOCK;
-            }
-            if flags as u16 & FDFLAGS_APPEND != 0 {
-                fl |= libc::O_APPEND;
-            }
-            check(unsafe { libc::fcntl(raw, libc::F_SETFL, fl) }).map(|_| ())
+            let Ok(fd) = e.fd() else { return Ok(()) };
+            let mut fl = rustix::fs::fcntl_getfl(fd).map_err(errno::rx)?;
+            fl.set(OFlags::NONBLOCK, flags as u16 & FDFLAGS_NONBLOCK != 0);
+            fl.set(OFlags::APPEND, flags as u16 & FDFLAGS_APPEND != 0);
+            rustix::fs::fcntl_setfl(fd, fl).map_err(errno::rx)
         })())
     })?;
 
@@ -380,10 +456,10 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let e = k.get(fd)?;
             let st = match &e.kind {
                 Kind::Mem { data, ino, .. } => {
-                    Stat { dev: EMBEDDED_DEV, ino: *ino, filetype: FILETYPE_REGULAR, nlink: 1, size: data.len() as u64, atim: 0, mtim: 0, ctim: 0 }
+                    Stat { dev: EMBEDDED_DEV, ino: *ino, filetype: FILETYPE_REGULAR, nlink: 1, size: data.len() as u64, atim: 0, mtim: 0, ctim: 0, mode: 0o444 }
                 },
                 Kind::Dir { guest } => stat_path(k, guest, true)?,
-                _ => Stat::of_fd(e.host_fd()?)?,
+                _ => Stat::of_fd(e.fd()?)?,
             };
             st.write(k, buf as u32)
         })())
@@ -395,7 +471,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             Kind::Mem { .. } => Err(errno::ROFS),
             Kind::Dir { .. } => Err(errno::ISDIR),
             Kind::File { ro: true, .. } => Err(errno::ROFS),
-            Kind::File { fd, .. } => check(unsafe { libc::ftruncate(fd.as_raw_fd(), size as libc::off_t) }).map(|_| ()),
+            Kind::File { fd, .. } => rustix::fs::ftruncate(fd, u64::try_from(size).map_err(|_| errno::INVAL)?).map_err(errno::rx),
             _ => Err(errno::INVAL),
         })())
     })?;
@@ -414,6 +490,8 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
                 Kind::Dir { .. } => return Err(errno::ISDIR),
                 _ => {
                     let v = k.mem.iovecs(iovs as u32, n as u32)?;
+                    // SAFETY: `v` holds bounds-checked guest buffers the kernel fills in place (no
+                    // Rust slice over guest memory, see `mem`); `e` keeps the fd open.
                     check_len(unsafe { libc::readv(e.host_fd()?, v.as_ptr(), v.len() as libc::c_int) })?
                 },
             };
@@ -434,6 +512,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
                     let mut total = 0usize;
                     let mut off = offset;
                     for iov in &v {
+                        // SAFETY: as for readv: a bounds-checked guest buffer; `e` keeps `raw` open.
                         let r = check_len(unsafe { libc::pread(raw, iov.iov_base, iov.iov_len, off as libc::off_t) })?;
                         total += r;
                         off += r as i64;
@@ -454,6 +533,8 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let e = k.get(fd)?;
             let raw = e.host_fd()?;
             let v = k.mem.iovecs(iovs as u32, n as u32)?;
+            // SAFETY: `v` holds bounds-checked guest buffers the kernel reads in place; `e` keeps
+            // `raw` open.
             let r = check_len(unsafe { libc::writev(raw, v.as_ptr(), v.len() as libc::c_int) })?;
             k.mem.set_u32(out as u32, r as u32)
         })())
@@ -478,17 +559,13 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
                 },
                 Kind::Dir { .. } => return Err(errno::ISDIR),
                 _ => {
-                    let w = match whence {
-                        0 => libc::SEEK_SET,
-                        1 => libc::SEEK_CUR,
-                        2 => libc::SEEK_END,
+                    let to = match whence {
+                        0 => SeekFrom::Start(u64::try_from(offset).map_err(|_| errno::INVAL)?),
+                        1 => SeekFrom::Current(offset),
+                        2 => SeekFrom::End(offset),
                         _ => return Err(errno::INVAL),
                     };
-                    let r = unsafe { libc::lseek(e.host_fd()?, offset as libc::off_t, w) };
-                    if r < 0 {
-                        return Err(errno::last());
-                    }
-                    r as u64
+                    rustix::fs::seek(e.fd()?, to).map_err(errno::rx)?
                 },
             };
             k.mem.set_u64(out as u32, new)
@@ -501,13 +578,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let e = k.get(fd)?;
             let p = match &e.kind {
                 Kind::Mem { pos, .. } => *pos.lock().unwrap(),
-                _ => {
-                    let r = unsafe { libc::lseek(e.host_fd()?, 0, libc::SEEK_CUR) };
-                    if r < 0 {
-                        return Err(errno::last());
-                    }
-                    r as u64
-                },
+                _ => rustix::fs::tell(e.fd()?).map_err(errno::rx)?,
             };
             k.mem.set_u64(out as u32, p)
         })())
@@ -568,7 +639,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
                 let g = guest_path(k, dirfd, path as u32, len as u32)?;
                 let n = host_for_write(k, &g, flags & LOOKUP_SYMLINK_FOLLOW != 0, true)?;
                 let times = utimens(atim, mtim, fst);
-                check(unsafe { libc::utimensat(n.dir.as_raw_fd(), n.name.as_ptr(), times.as_ptr(), at_flags(&n)) }).map(|_| ())
+                rustix::fs::utimensat(&n.dir, n.name.as_c_str(), &times, at_flags(&n)).map_err(errno::rx)
             })())
         },
     )?;
@@ -576,8 +647,14 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
     linker.func_wrap(m, "path_create_directory", |c: Caller<'_, Ctx>, dirfd: i32, path: i32, len: i32| -> i32 {
         let k = k(&c);
         code((|| {
-            let n = host_for_write(k, &guest_path(k, dirfd, path as u32, len as u32)?, false, false)?;
-            check(unsafe { libc::mkdirat(n.dir.as_raw_fd(), n.name.as_ptr(), 0o777) }).map(|_| ())
+            let g = guest_path(k, dirfd, path as u32, len as u32)?;
+            // EEXIST comes before EROFS and EBUSY, as on Linux: mkdir -p walks over mount points,
+            // the release and virtual directories, and stops only at EEXIST.
+            if stat_path(k, &g, false).is_ok() {
+                return Err(errno::EXIST);
+            }
+            let n = host_for_write(k, &g, false, false)?;
+            rustix::fs::mkdirat(&n.dir, n.name.as_c_str(), Mode::from_raw_mode(0o777)).map_err(errno::rx)
         })())
     })?;
 
@@ -585,7 +662,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         let k = k(&c);
         code((|| {
             let n = host_for_write(k, &guest_path(k, dirfd, path as u32, len as u32)?, false, false)?;
-            check(unsafe { libc::unlinkat(n.dir.as_raw_fd(), n.name.as_ptr(), libc::AT_REMOVEDIR) }).map(|_| ())
+            rustix::fs::unlinkat(&n.dir, n.name.as_c_str(), AtFlags::REMOVEDIR).map_err(errno::rx)
         })())
     })?;
 
@@ -593,7 +670,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         let k = k(&c);
         code((|| {
             let n = host_for_write(k, &guest_path(k, dirfd, path as u32, len as u32)?, false, false)?;
-            check(unsafe { libc::unlinkat(n.dir.as_raw_fd(), n.name.as_ptr(), 0) }).map(|_| ())
+            rustix::fs::unlinkat(&n.dir, n.name.as_c_str(), AtFlags::empty()).map_err(errno::rx)
         })())
     })?;
 
@@ -602,7 +679,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         code((|| {
             let a = host_for_write(k, &guest_path(k, fd, old as u32, old_len as u32)?, false, false)?;
             let b = host_for_write(k, &guest_path(k, new_fd, new as u32, new_len as u32)?, false, false)?;
-            check(unsafe { libc::renameat(a.dir.as_raw_fd(), a.name.as_ptr(), b.dir.as_raw_fd(), b.name.as_ptr()) }).map(|_| ())
+            rustix::fs::renameat(&a.dir, a.name.as_c_str(), &b.dir, b.name.as_c_str()).map_err(errno::rx)
         })())
     })?;
 
@@ -612,7 +689,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             // The target is stored as given: it is only ever resolved inside the guest's namespace.
             let target = CString::new(k.mem.read(old as u32, old_len as u32)?).map_err(|_| errno::INVAL)?;
             let n = host_for_write(k, &guest_path(k, fd, new as u32, new_len as u32)?, false, false)?;
-            check(unsafe { libc::symlinkat(target.as_ptr(), n.dir.as_raw_fd(), n.name.as_ptr()) }).map(|_| ())
+            rustix::fs::symlinkat(target.as_c_str(), &n.dir, n.name.as_c_str()).map_err(errno::rx)
         })())
     })?;
 
@@ -621,7 +698,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         code((|| {
             let a = host_for_write(k, &guest_path(k, old_fd, old as u32, old_len as u32)?, flags & LOOKUP_SYMLINK_FOLLOW != 0, false)?;
             let b = host_for_write(k, &guest_path(k, new_fd, new as u32, new_len as u32)?, false, false)?;
-            check(unsafe { libc::linkat(a.dir.as_raw_fd(), a.name.as_ptr(), b.dir.as_raw_fd(), b.name.as_ptr(), 0) }).map(|_| ())
+            rustix::fs::linkat(&a.dir, a.name.as_c_str(), &b.dir, b.name.as_c_str(), AtFlags::empty()).map_err(errno::rx)
         })())
     })?;
 
@@ -630,7 +707,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         code((|| {
             let g = guest_path(k, fd, path as u32, len as u32)?;
             let target = match k.resolve(&g, false)? {
-                Node::Host(n) => hostfs::readlink_at(n.dir.as_raw_fd(), &n.name)?,
+                Node::Host(n) => hostfs::readlink_at(&n.dir, &n.name)?,
                 Node::Embedded { fs, path, .. } => fs.lookup(&path, false).and_then(|(_, n)| fs.readlink(n)).ok_or(errno::INVAL)?,
                 Node::Proc { .. } | Node::Virtual { .. } => return Err(errno::INVAL),
                 Node::Missing => return Err(errno::NOENT),
@@ -662,6 +739,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let mut total = 0usize;
             let mut off = offset;
             for iov in &v {
+                // SAFETY: as for writev.
                 let r = check_len(unsafe { libc::pwrite(raw, iov.iov_base, iov.iov_len, off as libc::off_t) })?;
                 total += r;
                 off += r as i64;
@@ -682,11 +760,11 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             if matches!(e.kind, Kind::File { ro: true, .. }) {
                 return Err(errno::ROFS);
             }
-            let raw = e.host_fd()?;
-            let st = Stat::of_fd(raw)?;
+            let fd = e.fd()?;
+            let st = Stat::of_fd(fd)?;
             let want = offset.checked_add(len).filter(|w| *w >= 0).ok_or(errno::INVAL)? as u64;
             if want > st.size {
-                check(unsafe { libc::ftruncate(raw, want as libc::off_t) })?;
+                rustix::fs::ftruncate(fd, want).map_err(errno::rx)?;
             }
             Ok(())
         })())
@@ -699,9 +777,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             if matches!(e.kind, Kind::File { ro: true, .. }) {
                 return Err(errno::ROFS);
             }
-            let raw = e.host_fd()?;
-            let times = utimens(atim, mtim, fst);
-            check(unsafe { libc::futimens(raw, times.as_ptr()) }).map(|_| ())
+            rustix::fs::futimens(e.fd()?, &utimens(atim, mtim, fst)).map_err(errno::rx)
         })())
     })?;
 
@@ -717,8 +793,8 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             if !e.is_socket() {
                 return Err(errno::NOTSOCK);
             }
-            let nfd = check(unsafe { libc::accept(e.host_fd()?, std::ptr::null_mut(), std::ptr::null_mut()) })?;
-            let g = crate::net::adopt_socket(k, nfd, flags as u16 & FDFLAGS_NONBLOCK != 0)?;
+            let (conn, _) = crate::fds::accept(e.fd()?, false)?;
+            let g = crate::net::adopt_socket(k, conn, flags as u16 & FDFLAGS_NONBLOCK != 0)?;
             k.mem.set_u32(out as u32, g as u32)
         })())
     })?;
@@ -729,6 +805,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let e = k.get(fd)?;
             let raw = e.host_fd()?;
             let v = k.mem.iovecs(iovs as u32, n as u32)?;
+            // SAFETY: all-zero is a valid msghdr.
             let mut hdr: libc::msghdr = unsafe { std::mem::zeroed() };
             hdr.msg_iov = v.as_ptr() as *mut libc::iovec;
             hdr.msg_iovlen = v.len() as _;
@@ -739,6 +816,8 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             if flags & 2 != 0 {
                 hf |= libc::MSG_WAITALL;
             }
+            // SAFETY: `hdr` points at bounds-checked guest buffers the kernel fills in place; `e`
+            // keeps `raw` open.
             let r = check_len(unsafe { libc::recvmsg(raw, &mut hdr, hf) })?;
             k.mem.set_u32(out_len as u32, r as u32)?;
             k.mem.set_u16(out_flags as u32, if hdr.msg_flags & libc::MSG_TRUNC != 0 { 1 } else { 0 })
@@ -751,6 +830,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let e = k.get(fd)?;
             let raw = e.host_fd()?;
             let v = k.mem.iovecs(iovs as u32, n as u32)?;
+            // SAFETY: all-zero is a valid msghdr.
             let mut hdr: libc::msghdr = unsafe { std::mem::zeroed() };
             hdr.msg_iov = v.as_ptr() as *mut libc::iovec;
             hdr.msg_iovlen = v.len() as _;
@@ -758,6 +838,8 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let hf = libc::MSG_NOSIGNAL;
             #[cfg(not(target_os = "linux"))]
             let hf = 0;
+            // SAFETY: `hdr` points at bounds-checked guest buffers the kernel reads in place; `e`
+            // keeps `raw` open.
             let r = check_len(unsafe { libc::sendmsg(raw, &hdr, hf) })?;
             k.mem.set_u32(out_len as u32, r as u32)
         })())
@@ -767,7 +849,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         let k = k(&c);
         code((|| {
             let e = k.get(fd)?;
-            check(unsafe { libc::shutdown(e.host_fd()?, crate::net::shutdown_how(how)?) }).map(|_| ())
+            rustix::net::shutdown(e.fd()?, crate::net::shutdown_how(how)?).map_err(errno::rx)
         })())
     })?;
 
@@ -816,10 +898,9 @@ fn clock_now(k: &Kernel, id: i32) -> R<u64> {
         0 => Ok(SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| errno::INVAL)?.as_nanos() as u64),
         1 => Ok(k.now_mono_ns()),
         2 | 3 => {
-            let cid = if id == 2 { libc::CLOCK_PROCESS_CPUTIME_ID } else { libc::CLOCK_THREAD_CPUTIME_ID };
-            let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
-            check(unsafe { libc::clock_gettime(cid, &mut ts) })?;
-            Ok(ts_ns(ts.tv_sec, ts.tv_nsec))
+            let clock = if id == 2 { rustix::time::ClockId::ProcessCPUTime } else { rustix::time::ClockId::ThreadCPUTime };
+            let ts = rustix::time::clock_gettime(clock);
+            Ok(ts_ns(ts.tv_sec, ts.tv_nsec as i64))
         },
         _ => Err(errno::INVAL),
     }
@@ -898,30 +979,17 @@ fn open_embedded(fs: &Arc<RootFs>, guest: &str, path: &str, follow: bool, oflags
 /// mount point (the resolver already followed it when the guest asked to).
 fn open_host(n: &HostNode, oflags: i32, rights: u64, fdflags: u16) -> R<OwnedFd> {
     let mut flags = match (rights & RIGHTS_FD_READ != 0, rights & RIGHTS_FD_WRITE != 0) {
-        (_, false) => libc::O_RDONLY,
-        (false, true) => libc::O_WRONLY,
-        (true, true) => libc::O_RDWR,
+        (_, false) => OFlags::RDONLY,
+        (false, true) => OFlags::WRONLY,
+        (true, true) => OFlags::RDWR,
     };
-    if oflags & OFLAGS_CREAT != 0 {
-        flags |= libc::O_CREAT;
-    }
-    if oflags & OFLAGS_EXCL != 0 {
-        flags |= libc::O_EXCL;
-    }
-    if oflags & OFLAGS_TRUNC != 0 {
-        flags |= libc::O_TRUNC;
-    }
-    if fdflags & FDFLAGS_APPEND != 0 {
-        flags |= libc::O_APPEND;
-    }
-    if fdflags & FDFLAGS_NONBLOCK != 0 {
-        flags |= libc::O_NONBLOCK;
-    }
-    if !n.mount_root {
-        flags |= libc::O_NOFOLLOW;
-    }
-    let fd = check(unsafe { libc::openat(n.dir.as_raw_fd(), n.name.as_ptr(), flags | libc::O_CLOEXEC, 0o644 as libc::c_uint) })?;
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    flags.set(OFlags::CREATE, oflags & OFLAGS_CREAT != 0);
+    flags.set(OFlags::EXCL, oflags & OFLAGS_EXCL != 0);
+    flags.set(OFlags::TRUNC, oflags & OFLAGS_TRUNC != 0);
+    flags.set(OFlags::APPEND, fdflags & FDFLAGS_APPEND != 0);
+    flags.set(OFlags::NONBLOCK, fdflags & FDFLAGS_NONBLOCK != 0);
+    flags.set(OFlags::NOFOLLOW, !n.mount_root);
+    rustix::fs::openat(&n.dir, n.name.as_c_str(), flags | OFlags::CLOEXEC, Mode::from_raw_mode(0o644)).map_err(errno::rx)
 }
 
 fn readdir(k: &Kernel, fd: i32, buf: u32, len: u32, cookie: u64, out: u32) -> R<()> {
@@ -1022,8 +1090,8 @@ fn poll_oneoff(k: &Kernel, subs: u32, events: u32, n: u32, out: u32) -> R<()> {
     }
 
     let mut ready: Vec<(u64, u8, i32, u16)> = Vec::new();
-    let mut pollfds: Vec<libc::pollfd> = Vec::new();
     let mut polled: Vec<usize> = Vec::new();
+    let mut interest: Vec<PollFlags> = Vec::new();
     // Held until poll returns, so a concurrent close cannot hand a polled host fd to a new file.
     let mut held: Vec<Arc<Entry>> = Vec::new();
     for (i, s) in list.iter().enumerate() {
@@ -1032,53 +1100,52 @@ fn poll_oneoff(k: &Kernel, subs: u32, events: u32, n: u32, out: u32) -> R<()> {
         }
         match k.get(s.fd) {
             Err(e) => ready.push((s.userdata, s.tag, e, 0)),
-            Ok(entry) => match pollable(&entry) {
-                Some(raw) => {
-                    let ev = if s.tag == EVENTTYPE_FD_READ { libc::POLLIN } else { libc::POLLOUT };
-                    pollfds.push(libc::pollfd { fd: raw, events: ev, revents: 0 });
-                    polled.push(i);
-                    held.push(entry);
-                },
-                None => ready.push((s.userdata, s.tag, errno::SUCCESS, 0)),
+            Ok(entry) if pollable(&entry) => {
+                interest.push(if s.tag == EVENTTYPE_FD_READ { PollFlags::IN } else { PollFlags::OUT });
+                polled.push(i);
+                held.push(entry);
             },
+            Ok(_) => ready.push((s.userdata, s.tag, errno::SUCCESS, 0)),
         }
     }
 
     let wait = list.iter().filter_map(|s| s.deadline).min();
     let started = std::time::Instant::now();
+    // `pollable` admitted only entries with a host fd.
+    let mut pollfds: Vec<PollFd<'_>> = held.iter().zip(&interest).filter_map(|(e, ev)| Some(PollFd::from_borrowed_fd(e.fd().ok()?, *ev))).collect();
     if pollfds.is_empty() && ready.is_empty() {
         if let Some(w) = wait {
             std::thread::sleep(w);
         }
     } else {
-        let timeout_ms: libc::c_int = if !ready.is_empty() {
-            0
+        // Whole milliseconds, rounded up, as poll(2) takes them.
+        let timeout = if !ready.is_empty() {
+            Some(Timespec { tv_sec: 0, tv_nsec: 0 })
         } else {
-            match wait {
-                None => -1,
-                Some(w) => w.as_nanos().div_ceil(1_000_000).min(i32::MAX as u128) as libc::c_int,
-            }
+            wait.map(|w| {
+                let ms = w.as_nanos().div_ceil(1_000_000).min(i32::MAX as u128) as i64;
+                Timespec { tv_sec: ms / 1000, tv_nsec: ((ms % 1000) * 1_000_000) as _ }
+            })
         };
         loop {
-            let r = unsafe { libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::nfds_t, timeout_ms) };
-            if r >= 0 {
-                break;
-            }
-            let e = errno::last();
-            if e != errno::INTR {
-                return Err(e);
+            match rustix::event::poll(&mut pollfds, timeout.as_ref()) {
+                Ok(_) => break,
+                Err(rustix::io::Errno::INTR) => continue,
+                Err(e) => return Err(errno::rx(e)),
             }
         }
         for (pfd, &i) in pollfds.iter().zip(&polled) {
-            if pfd.revents == 0 {
+            let revents = pfd.revents();
+            if revents.is_empty() {
                 continue;
             }
             let s = &list[i];
-            let err = if pfd.revents & libc::POLLNVAL != 0 { errno::BADF } else { errno::SUCCESS };
-            let flags = if pfd.revents & libc::POLLHUP != 0 { EVENT_HANGUP } else { 0 };
+            let err = if revents.contains(PollFlags::NVAL) { errno::BADF } else { errno::SUCCESS };
+            let flags = if revents.contains(PollFlags::HUP) { EVENT_HANGUP } else { 0 };
             ready.push((s.userdata, s.tag, err, flags));
         }
     }
+    drop(pollfds);
     drop(held);
 
     if ready.is_empty() {
@@ -1107,16 +1174,13 @@ fn poll_oneoff(k: &Kernel, subs: u32, events: u32, n: u32, out: u32) -> R<()> {
     m.set_u32(out, ready.len() as u32)
 }
 
-/// The host fd to poll(2) for `e`, or None when it is always ready: files, embedded files,
+/// Whether to poll(2) the host fd of `e`; not when it is always ready: files, embedded files,
 /// directories, and stdio that is a non-tty character device (macOS poll(2) reports POLLNVAL
 /// for devices such as /dev/null).
-fn pollable(e: &Entry) -> Option<i32> {
-    match e.kind {
-        Kind::Socket(_) | Kind::Pipe(_) => e.raw(),
-        Kind::Stdio(fd) => match Stat::of_fd(fd) {
-            Ok(st) if st.filetype == FILETYPE_CHAR && unsafe { libc::isatty(fd) } == 0 => None,
-            _ => Some(fd),
-        },
-        _ => None,
+fn pollable(e: &Entry) -> bool {
+    match (&e.kind, e.fd()) {
+        (Kind::Socket(_) | Kind::Pipe(_), Ok(_)) => true,
+        (Kind::Stdio(_), Ok(fd)) => !matches!(Stat::of_fd(fd), Ok(st) if st.filetype == FILETYPE_CHAR && !fd.is_terminal()),
+        _ => false,
     }
 }

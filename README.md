@@ -184,9 +184,12 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--rewrite-connect A=B` | `AMPOULE_REWRITE` | send connections for `A` (ip:port) to `B` |
 | `--deny-connect ADDR` | `AMPOULE_DENY` | refuse connections to `ADDR` (ip:port) |
 | `--mount H:G[:ro],...` | `AMPOULE_MOUNTS` | expose host path `H` at guest path `G` |
+| `--allow-exec PROGS` | `AMPOULE_ALLOW_EXEC` | host programs the app may start, e.g. `git,/bin/sh`, or `*` for everything on `PATH` (replaces `[process] allow`; see [Host programs](#host-programs)) |
 | `--memory-max SIZE` | `AMPOULE_MEMORY_MAX` | cap the VM's memory, e.g. `512M`, `2G` |
 | `--schedulers N` | `AMPOULE_SCHEDULERS` | scheduler threads (default: `+S` in the VM flags, else host cores) |
 | `--vm-args FLAGS` | `AMPOULE_VM_ARGS` | VM flags written as in `vm.args`, e.g. `"+S :4 +SDio 2"` |
+| `--restart MODE` | `AMPOULE_RESTART` | with `start`, `on-failure` starts the VM again when it fails, out of memory included (default: `off`; see [Memory and restarts](#memory-and-restarts)) |
+| `--memory-alarm PCT` | `AMPOULE_MEMORY_ALARM` | with `start`, set the `system_memory_high_watermark` alarm at `PCT`% of the memory limit (default: 80; 0 turns it off) |
 | `--idle-stop TIME` | `AMPOULE_IDLE_STOP` | with `start`, stop the VM after `TIME` without connections and start it again on the next one (`300`, `90s`, `5m`, `1h`; see [Stopping when idle](#stopping-when-idle)) |
 | `--stop-timeout SECS` | `AMPOULE_STOP_TIMEOUT` | how long SIGTERM and SIGINT wait for a clean stop (default: 30) |
 | `--tmp DIR` | `AMPOULE_TMP` | host directory behind `/tmp` (default: a private one) |
@@ -216,6 +219,8 @@ stores it in the binary:
 serve = ["migrate", { run = "seed", when = "SEED=true" }, "start"]   # `<binary> serve`
 vm_args = "+S :4 +SDio 2"        # VM flags as in vm.args, after the release's own
 idle_stop = "5m"                 # stop the VM after 5 minutes without connections
+restart = "on-failure"           # start the VM again when it fails (a crash, out of memory)
+memory_alarm = 80                # memory alarm at this % of the VM's memory limit (0: off)
 
 [commands]                       # `<binary> migrate` evaluates the expression
 migrate = "MyApp.Release.migrate()"
@@ -230,6 +235,9 @@ PHX_SERVER = "true"
 [network]
 listen = [4000]                  # the only ports the app may bind (default: any)
 port_map = { 4000 = 8080 }       # app port -> host port
+
+[process]
+allow = ["git", "/bin/sh"]       # host programs the app may start (default: none; "*": all on PATH)
 ```
 
 Each `serve` step runs as its own VM, because a guest exit ends the runtime process, and the last
@@ -282,6 +290,44 @@ earlier steps run once and only `start` runs again.
 - A connection that arrives at the moment the VM decides to stop can be accepted by an app that is
   shutting down, and dropped.
 
+### Memory and restarts
+
+The VM's memory is capped: by `--memory-max`, or at 4 GiB, the most wasm32 can address. As on a
+native release, an allocation the VM cannot make ends it with a crash dump
+(`binary_alloc: Cannot allocate ...`). ampoule gives the app two ways to deal with that.
+
+**The memory alarm.** `start` watches `:erlang.memory(:total)` against the limit and sets OTP's
+standard `{:system_memory_high_watermark, []}` alarm through `:alarm_handler` at 80% (`memory_alarm`,
+`--memory-alarm`), clearing it 10 points lower. It is the alarm os_mon's memsup raises, which cannot
+run here, so code that already sheds load on memsup alarms works unchanged:
+
+```elixir
+:gen_event.add_handler(:alarm_handler, MyApp.MemoryAlarm, [])   # handle_event({:set_alarm, ...})
+```
+
+The watch looks twice a second, so it catches memory that grows, not a single allocation that jumps
+past the limit. `/proc/meminfo` reports the limit as `MemTotal`, as a container's cgroup limit
+shows, for code that sizes itself from it.
+
+**Restarting.** With `restart = "on-failure"` (or `--restart on-failure`), `start` runs the VM as a
+child and starts it again when it exits with a non-zero status, after 1, 2, 4, 8 and 16 seconds.
+Listening sockets stay open in between (as with [`--idle-stop`](#stopping-when-idle)), so clients
+wait instead of being refused. After 5 failures within 5 minutes it gives up and exits with the VM's
+status, for systemd, Kubernetes or Docker to take over. A clean stop (`System.stop/0`, SIGTERM) is
+not restarted. Each failure leaves its crash dump in the run's `/tmp`.
+
+```console
+$ ./my_app --memory-max 256M --restart on-failure start
+[warning] ampoule: VM memory at 81% of its 256 MiB limit; alarm system_memory_high_watermark set
+binary_alloc: Cannot allocate 16777216 bytes of memory (of type "binary").
+ampoule: VM failed (status 1); restarting in 1s (1 of 5 in 5m)
+```
+
+Usable memory is less than the limit: thread stacks and allocator overhead live in the same memory,
+more of it with more schedulers. The VM's memory also never shrinks once grown, so a spike stays
+reserved until the VM restarts. To kill a runaway process rather than the VM, cap process heaps with
+`+hmax` (and `+hmaxib true` to count binaries) in `vm_args`.
+
 ### What the app sees
 
 The app sees only these paths:
@@ -296,6 +342,7 @@ The app sees only these paths:
 | `/dev/null` | the host's |
 | `/proc` | generated in Linux's formats: `meminfo`, `loadavg`, `stat`, `uptime`, `cpuinfo`, `self/{stat,statm,status,limits,fd}` |
 | anything from `--mount` | the host path, optionally read-only |
+| each program in `[process] allow` | the host's, read-only, at the path it has on the host |
 
 Symlinks are resolved inside the app's view, never the host's: a link to `/` in `/tmp` points at
 the app's own root, and a link to `/etc/passwd` finds nothing unless a mount provides that path.
@@ -312,6 +359,44 @@ and its path is printed.
 Sockets are host sockets. Binds and connects go through the network policy (`--listen`,
 `--port-map`, `--listen-host`, `--rewrite-connect`, `--deny-connect`), and everything else goes
 straight to the host. TLS uses OTP's `ssl` with the OpenSSL 3.5 linked into the engine.
+
+Unix domain sockets (`{:local, path}` with `gen_tcp` and `gen_udp`) work at the app's own paths:
+binding creates the socket in a directory the app may write (`/tmp`, a writable `--mount`), and
+connecting reaches a socket file the app can see, such as a host service mounted in with
+`--mount /var/run/app:/run/app`. Nothing outside the mounts is reachable, and Linux's abstract
+names (a leading NUL byte) are refused with `:eacces`. A socket path is limited to 104 bytes on
+macOS and 108 on Linux as the host sees it; on macOS that includes the private `/tmp`'s own path.
+
+### Host programs
+
+Ports, `System.cmd/3` and `:os.cmd/1` start host programs, but only the ones the app allows in
+`[process] allow` (or `--allow-exec`, which replaces that list). Nothing is allowed by default.
+
+```toml
+[process]
+allow = ["git", "/bin/sh"]   # a name is looked up on PATH; "*" allows everything on PATH
+```
+
+```elixir
+System.cmd("git", ["rev-parse", "HEAD"])      # {"1f3c...\n", 0}
+:os.cmd(~c"date +%s")                          # needs /bin/sh, which :os.cmd runs
+Port.open({:spawn_executable, "/bin/sh"}, [:binary, :exit_status, args: ["-c", "cat"]])
+```
+
+Each allowed program is also mounted read-only at its host path, so `System.find_executable/1`
+finds it. Programs missing on the host are left out, and the app gets the same `:enoent` it would
+get natively. A program that is not allowed fails with `:eacces`.
+
+- The program runs on the host, outside the app's view of the filesystem. Its path and working
+  directory (`cd:`) are translated from the app's paths: `cd: "/tmp"` runs it in the host directory
+  behind `/tmp`. Arguments and environment pass through unchanged, except `HOME`, which points at the
+  host directory behind the app's `/tmp`. A path inside `/app` means nothing to a host program.
+- Allowing `/bin/sh` (which `:os.cmd/1` and `{:spawn, Cmd}` ports need) allows whatever the shell
+  can start. On busybox systems, allowing one applet allows all of them, since the app chooses
+  `argv[0]`.
+- An empty `FROM scratch` image has no programs to run, not even `/bin/sh`.
+- Exit statuses, `os_pid`, `stderr_to_stdout`, `nouse_stdio` and `{:packet, N}` behave as on a
+  native release.
 
 ### NIFs
 
@@ -340,8 +425,17 @@ one native library.
 
 ## Limitations
 
-- Host processes: port programs, `:os.cmd/1` and `System.cmd/3` cannot start anything. For the same
-  reason os_mon's `memsup`, `cpu_sup`, `disksup` and `os_sup` are switched off.
+- Host programs run only when [allowed](#host-programs). Port programs inside the release (`priv/`)
+  are not packed, so they cannot run. For the same reason os_mon's `memsup`, `cpu_sup`, `disksup`
+  and `os_sup` are switched off; the [memory alarm](#memory-and-restarts) stands in for `memsup`'s.
+- Memory: at most 4 GiB, and it never shrinks back once grown (see
+  [Memory and restarts](#memory-and-restarts)).
+- File permissions: files the app creates start at 0644 (directories 0755), less the host's umask,
+  as on most hosts natively; `File.chmod/2` then sets the mode on the host file. It cannot set
+  setuid or setgid bits, and the owner (`File.stat/1`'s `uid`, `gid`) always reads 0.
+- Identity: `:os.type()` is `{:unix, :linux}` and `:erlang.system_info(:logical_processors)` is 1
+  on every host. `System.pid/0` is the host pid of the process running the VM (the child, under
+  `--restart` or `--idle-stop`).
 - Distribution: the app runs as one node; packing removes distribution from its start arguments,
   and the runtime leaves distribution flags in `vm.args` out.
 - NIF threads: a thread a NIF starts must return from its function. `enif_thread_exit` ends the
@@ -356,8 +450,8 @@ one native library.
 
 `ampoule` carries the BEAM compiled to `wasm32-wasip1-threads` and precompiled to native code
 with wasmtime. It is also the operating system the release runs on: WASI preview 1,
-`wasi.thread-spawn`, host sockets, a mount table and a generated `/proc`, implemented in Rust over
-one fd table that every wasm thread shares.
+`wasi.thread-spawn`, host sockets, host processes, a mount table and a generated `/proc`,
+implemented in Rust over one fd table that every wasm thread shares.
 
 Packing appends the app to a copy of `ampoule`:
 

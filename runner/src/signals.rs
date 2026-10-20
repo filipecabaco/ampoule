@@ -26,6 +26,8 @@ const HANDLED: [libc::c_int; 3] = [libc::SIGTERM, libc::SIGINT, libc::SIGQUIT];
 /// The handled signals, blocked in the calling thread and so in every thread it starts afterwards:
 /// call before the VM's threads exist, so only `spawn`'s thread receives them.
 pub fn block() -> libc::sigset_t {
+    // SAFETY: sigset_t is plain data, initialised by sigemptyset before use. Raw libc: rustix
+    // offers signal masks only in its unstable runtime module.
     unsafe {
         let mut set: libc::sigset_t = std::mem::zeroed();
         libc::sigemptyset(&mut set);
@@ -47,6 +49,7 @@ fn forward(k: &Kernel, set: &libc::sigset_t, stop_timeout: Duration) {
     let mut stopping = false;
     loop {
         let mut sig: libc::c_int = 0;
+        // SAFETY: `set` was built by `block`; sigwait writes one int.
         if unsafe { libc::sigwait(set, &mut sig) } != 0 {
             continue;
         }
@@ -66,9 +69,9 @@ fn forward(k: &Kernel, set: &libc::sigset_t, stop_timeout: Duration) {
 
 /// Write `guest_sig` to the guest's dispatcher pipe; false when there is none yet.
 pub fn deliver(k: &Kernel, guest_sig: i32) -> bool {
-    let Some(raw) = k.signal_pipe.get().and_then(|e| e.raw()) else { return false };
+    let Some(fd) = k.signal_pipe.get().and_then(|e| e.fd().ok()) else { return false };
     let bytes = guest_sig.to_le_bytes();
-    unsafe { libc::write(raw, bytes.as_ptr().cast(), bytes.len()) == bytes.len() as isize }
+    rustix::io::write(fd, &bytes) == Ok(bytes.len())
 }
 
 fn exit(sig: libc::c_int, what: &str) -> ! {

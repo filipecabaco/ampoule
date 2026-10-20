@@ -111,6 +111,7 @@ pub fn self_bytes() -> Result<&'static [u8]> {
     if ptr == libc::MAP_FAILED {
         return Err(std::io::Error::last_os_error()).with_context(|| format!("mapping {}", exe.display()));
     }
+    // SAFETY: the `len`-byte mapping above, valid and unchanged for the rest of the process.
     Ok(unsafe { std::slice::from_raw_parts(ptr as *const u8, len) })
 }
 

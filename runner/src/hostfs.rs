@@ -9,11 +9,13 @@
 //! component swapped for a symlink mid-walk is seen as a link, not followed.
 
 use std::ffi::CString;
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
-use crate::errno::{self, check};
+use rustix::fs::{AtFlags, FileType, Mode, OFlags};
+
+use crate::errno;
 use crate::mem::R;
 
 /// How many symlinks one lookup may pass through (Linux's MAXSYMLINKS).
@@ -41,34 +43,25 @@ fn cstr(s: &[u8]) -> R<CString> {
     CString::new(s).map_err(|_| errno::INVAL)
 }
 
-fn open_dir_at(dir: RawFd, name: &CString) -> R<OwnedFd> {
-    let fd = check(unsafe { libc::openat(dir, name.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) })?;
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+fn open_dir_at(dir: impl AsFd, name: &CString) -> R<OwnedFd> {
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    rustix::fs::openat(dir, name.as_c_str(), flags, Mode::empty()).map_err(errno::rx)
 }
 
 /// Open a trusted host directory (a mount root chosen by the runtime or the user, not the guest).
 fn open_root(path: &Path) -> R<OwnedFd> {
     let c = cstr(path.as_os_str().as_bytes())?;
-    let fd = check(unsafe { libc::open(c.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC) })?;
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    rustix::fs::open(c.as_c_str(), OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC, Mode::empty()).map_err(errno::rx)
 }
 
-/// `lstat` of `name` in `dir`.
-pub fn lstat_at(dir: RawFd, name: &CString) -> R<libc::stat> {
-    let mut st: libc::stat = unsafe { std::mem::zeroed() };
-    check(unsafe { libc::fstatat(dir, name.as_ptr(), &mut st, libc::AT_SYMLINK_NOFOLLOW) })?;
-    Ok(st)
+/// Is `name` in `dir` a symlink (not following it)?
+fn is_symlink_at(dir: impl AsFd, name: &CString) -> R<bool> {
+    let st = rustix::fs::statat(dir, name.as_c_str(), AtFlags::SYMLINK_NOFOLLOW).map_err(errno::rx)?;
+    Ok(FileType::from_raw_mode(st.st_mode as _) == FileType::Symlink)
 }
 
-pub fn is_symlink(st: &libc::stat) -> bool {
-    st.st_mode & libc::S_IFMT == libc::S_IFLNK
-}
-
-pub fn readlink_at(dir: RawFd, name: &CString) -> R<Vec<u8>> {
-    let mut buf = vec![0u8; libc::PATH_MAX as usize];
-    let n = errno::check_len(unsafe { libc::readlinkat(dir, name.as_ptr(), buf.as_mut_ptr().cast(), buf.len()) })?;
-    buf.truncate(n);
-    Ok(buf)
+pub fn readlink_at(dir: impl AsFd, name: &CString) -> R<Vec<u8>> {
+    Ok(rustix::fs::readlinkat(dir, name.as_c_str(), Vec::new()).map_err(errno::rx)?.into_bytes())
 }
 
 /// Where a symlink found at guest directory `dir_guest` with target `target` points, plus the
@@ -121,23 +114,20 @@ pub fn walk(root: &Path, mount_guest: &str, rel: &str, ro: bool, follow: bool) -
         let last = i + 1 == parts.len();
         if last {
             if follow {
-                if let Ok(st) = lstat_at(dir.as_raw_fd(), &name) {
-                    if is_symlink(&st) {
-                        let target = readlink_at(dir.as_raw_fd(), &name)?;
-                        return Ok(Walk::Redirect(redirect(&join(&parts[..i]), &target, &[])?));
-                    }
+                if let Ok(true) = is_symlink_at(&dir, &name) {
+                    let target = readlink_at(&dir, &name)?;
+                    return Ok(Walk::Redirect(redirect(&join(&parts[..i]), &target, &[])?));
                 }
             }
             return Ok(Walk::Node(HostNode { dir, name, ro, mount_root: false, guest: join(&parts) }));
         }
-        match open_dir_at(dir.as_raw_fd(), &name) {
+        match open_dir_at(&dir, &name) {
             Ok(next) => dir = next,
             Err(e) => {
-                let st = lstat_at(dir.as_raw_fd(), &name).map_err(|_| e)?;
-                if !is_symlink(&st) {
+                if !is_symlink_at(&dir, &name).map_err(|_| e)? {
                     return Err(e);
                 }
-                let target = readlink_at(dir.as_raw_fd(), &name)?;
+                let target = readlink_at(&dir, &name)?;
                 return Ok(Walk::Redirect(redirect(&join(&parts[..i]), &target, &parts[i + 1..])?));
             },
         }
@@ -147,37 +137,15 @@ pub fn walk(root: &Path, mount_guest: &str, rel: &str, ro: bool, follow: bool) -
 
 /// The entries of a host directory, opened safely: (name, inode, WASI filetype).
 pub fn list(node: &HostNode) -> R<Vec<(Vec<u8>, u64, u8)>> {
-    let raw = open_dir_at(node.dir.as_raw_fd(), &node.name)?.into_raw_fd();
-    // fdopendir takes ownership of the fd: closedir closes it.
-    let dirp = unsafe { libc::fdopendir(raw) };
-    if dirp.is_null() {
-        let e = errno::last();
-        unsafe { libc::close(raw) };
-        return Err(e);
-    }
+    let dir = rustix::fs::Dir::new(open_dir_at(&node.dir, &node.name)?).map_err(errno::rx)?;
     let mut out = Vec::new();
-    loop {
-        let ent = unsafe { libc::readdir(dirp) };
-        if ent.is_null() {
-            break;
-        }
-        // SAFETY: readdir returned a valid entry, used before the next readdir/closedir call.
-        let ent = unsafe { &*ent };
-        let name = unsafe { std::ffi::CStr::from_ptr(ent.d_name.as_ptr()) }.to_bytes().to_vec();
+    // A read error ends the listing, as readdir(3) returning NULL does.
+    for ent in dir.map_while(Result::ok) {
+        let name = ent.file_name().to_bytes();
         if name == b"." || name == b".." {
             continue;
         }
-        let ft = match ent.d_type {
-            libc::DT_DIR => crate::wasi::FILETYPE_DIR,
-            libc::DT_REG => crate::wasi::FILETYPE_REGULAR,
-            libc::DT_LNK => crate::wasi::FILETYPE_SYMLINK,
-            libc::DT_SOCK => crate::wasi::FILETYPE_SOCKET_STREAM,
-            libc::DT_CHR => crate::wasi::FILETYPE_CHAR,
-            libc::DT_BLK => crate::wasi::FILETYPE_BLOCK,
-            _ => crate::wasi::FILETYPE_UNKNOWN,
-        };
-        out.push((name, ent.d_ino, ft));
+        out.push((name.to_vec(), ent.ino(), crate::wasi::filetype_of(ent.file_type())));
     }
-    unsafe { libc::closedir(dirp) };
     Ok(out)
 }
