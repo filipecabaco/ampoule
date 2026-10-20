@@ -209,15 +209,20 @@ fn apply_fixups(dir: &Path) -> Result<usize> {
         return Ok(0);
     }
     for entry in std::fs::read_dir(dir)? {
-        let p = entry?.path();
-        if p.is_dir() {
+        let entry = entry?;
+        // Not followed: a symlink in the copy can point at a file outside it (the original
+        // project, or anywhere), which must not be patched, and can form a cycle.
+        let ft = entry.file_type()?;
+        let p = entry.path();
+        if ft.is_dir() {
             fixed += apply_fixups(&p)?;
             continue;
         }
-        if !matches!(p.extension().and_then(|e| e.to_str()), Some("h" | "hpp" | "hh" | "c" | "cc" | "cpp")) {
+        if !ft.is_file() || !matches!(p.extension().and_then(|e| e.to_str()), Some("h" | "hpp" | "hh" | "c" | "cc" | "cpp")) {
             continue;
         }
-        let Ok(src) = std::fs::read_to_string(&p) else { continue };
+        // Bytes, not text: a source in Latin-1 must get its fixup too, not be skipped.
+        let src = std::fs::read(&p)?;
         // Only the amalgamation (a .c file) takes the SQLite stubs: sqlite3.h carries the same
         // WASI block, and definitions in a header would be duplicated wherever it is included.
         let is_c = p.extension().and_then(|e| e.to_str()) == Some("c");
@@ -230,34 +235,52 @@ fn apply_fixups(dir: &Path) -> Result<usize> {
     Ok(fixed)
 }
 
+/// Where `needle` first occurs in `hay`.
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
 /// `ERL_FLAGS` for building `app`: the caller's own, plus elixir_make's `force_build` for `app`,
 /// set as an application parameter. Dependencies with precompiled NIFs (cc_precompiler, as
 /// exqlite uses) otherwise download a library built for the host instead of running `make`, and
 /// leave nothing for wasm.
+///
+/// Only for names that are plain Erlang atoms: erlexec splits ERL_FLAGS on spaces and strips
+/// quotes, so any other name would break the VM's start (`foo-bar`) or add flags of its own.
+/// Such an app is built as before, without the override.
 fn force_source_build(app: &str) -> String {
     let own = std::env::var("ERL_FLAGS").unwrap_or_default();
-    format!("{own} -elixir_make force_build [{{'{app}',true}}]").trim_start().to_string()
+    let plain = app.starts_with(|c: char| c.is_ascii_lowercase()) && app.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !plain {
+        return own;
+    }
+    format!("{own} -elixir_make force_build [{{{app},true}}]").trim_start().to_string()
 }
 
-fn fixup_iovec(src: &str) -> Option<String> {
-    let start = src.find("\nstruct iovec {")?;
-    let end = start + src[start..].find("};")? + 2;
-    Some(format!("{}\n#ifndef __wasi__{}\n#endif{}", &src[..start], &src[start..end], &src[end..]))
+fn fixup_iovec(src: &[u8]) -> Option<Vec<u8>> {
+    let start = find(src, b"\nstruct iovec {")?;
+    let end = start + find(&src[start..], b"};")? + 2;
+    Some([&src[..start], b"\n#ifndef __wasi__", &src[start..end], b"\n#endif", &src[end..]].concat())
 }
 
 /// The SQLite amalgamation's WASI support, completed for a NIF. ampoule compiles NIFs with
 /// `__linux__` defined, which turns SQLite's memory-mapped I/O on; under WASI SQLite has left out
 /// <sys/mman.h>, so that code does not build: it is switched off instead (reads go through
-/// read(), as with `PRAGMA mmap_size = 0`). And WASI leaves out loading extensions, which a
-/// wrapper NIF such as exqlite still calls: stubs report that it cannot be done.
-fn fixup_sqlite(src: &str) -> Option<String> {
-    const WASI: &str = "# define SQLITE_WASI 1\n";
+/// read(), as with `PRAGMA mmap_size = 0`). Under WASI SQLite also defaults to single-threaded,
+/// which a NIF called from several schedulers at once cannot be: unless the build chose, it is
+/// thread-safe (wasm32-wasip1-threads has pthread mutexes). And WASI leaves out loading
+/// extensions, which a wrapper NIF such as exqlite still calls: stubs report that it cannot be
+/// done.
+fn fixup_sqlite(src: &[u8]) -> Option<Vec<u8>> {
+    const WASI: &[u8] = b"# define SQLITE_WASI 1\n";
     const MARK: &str = "ampoule: SQLite under WASI";
-    if src.contains(MARK) || !src.contains("SQLITE_VERSION") {
+    if find(src, MARK.as_bytes()).is_some() || find(src, b"SQLITE_VERSION").is_none() {
         return None;
     }
-    let at = src.find(WASI)? + WASI.len();
-    let mmap = format!("/* {MARK}: no memory-mapped I/O. */\n# ifndef SQLITE_MAX_MMAP_SIZE\n#  define SQLITE_MAX_MMAP_SIZE 0\n# endif\n");
+    let at = find(src, WASI)? + WASI.len();
+    let mmap = format!(
+        "/* {MARK}: no memory-mapped I/O, and thread-safe. */\n# ifndef SQLITE_MAX_MMAP_SIZE\n#  define SQLITE_MAX_MMAP_SIZE 0\n# endif\n# ifndef SQLITE_THREADSAFE\n#  define SQLITE_THREADSAFE 1\n# endif\n"
+    );
     let stubs = format!(
         r#"
 /* {MARK}: there is no dynamic loading, so extensions cannot be loaded. */
@@ -274,7 +297,7 @@ SQLITE_API int sqlite3_load_extension(sqlite3 *db, const char *zFile, const char
 #endif
 "#
     );
-    Some(format!("{}{mmap}{}{stubs}", &src[..at], &src[at..]))
+    Some([&src[..at], mmap.as_bytes(), &src[at..], stubs.as_bytes()].concat())
 }
 
 fn is_archive(p: &Path) -> bool {
@@ -620,7 +643,7 @@ pub fn precompile(wasm: &[u8], target: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_llvm, copy_project, fixup_sqlite, project_app, skip_in_copy};
+    use super::{check_llvm, copy_project, find, fixup_iovec, fixup_sqlite, force_source_build, project_app, skip_in_copy};
 
     #[test]
     fn a_bitcode_kit_links_only_with_its_own_llvm() {
@@ -676,13 +699,30 @@ mod tests {
     }
 
     #[test]
-    fn sqlite_under_wasi_gets_no_mmap_and_extension_stubs_once() {
-        let amalgamation = "#define SQLITE_VERSION \"3.54.1\"\n#if defined(__wasi__)\n# undef SQLITE_WASI\n# define SQLITE_WASI 1\n#endif\nint body;\n";
+    fn sqlite_under_wasi_gets_no_mmap_threads_and_extension_stubs_once() {
+        let amalgamation: &[u8] = b"#define SQLITE_VERSION \"3.54.1\"\n#if defined(__wasi__)\n# undef SQLITE_WASI\n# define SQLITE_WASI 1\n#endif\nint body;\n";
         let patched = fixup_sqlite(amalgamation).unwrap();
-        let wasi = patched.find("# define SQLITE_WASI 1").unwrap();
-        assert!(patched.find("#  define SQLITE_MAX_MMAP_SIZE 0").unwrap() > wasi);
-        assert!(patched.ends_with("#endif\n") && patched.contains("sqlite3_enable_load_extension"));
+        let text = String::from_utf8(patched.clone()).unwrap();
+        let wasi = text.find("# define SQLITE_WASI 1").unwrap();
+        assert!(text.find("#  define SQLITE_MAX_MMAP_SIZE 0").unwrap() > wasi);
+        assert!(text.find("#  define SQLITE_THREADSAFE 1").unwrap() > wasi);
+        assert!(text.ends_with("#endif\n") && text.contains("sqlite3_enable_load_extension"));
         assert_eq!(fixup_sqlite(&patched), None);
-        assert_eq!(fixup_sqlite("int unrelated;\n"), None);
+        assert_eq!(fixup_sqlite(b"int unrelated;\n"), None);
+    }
+
+    #[test]
+    fn fixups_work_on_sources_that_are_not_utf8() {
+        // Latin-1 in a comment: the old text-based fixups skipped such a file.
+        let src: &[u8] = b"/* caf\xe9 */\nstruct iovec { void *b; int n; };\nint x;\n";
+        let patched = fixup_iovec(src).unwrap();
+        assert!(find(&patched, b"#ifndef __wasi__").is_some() && find(&patched, b"caf\xe9").is_some());
+    }
+
+    #[test]
+    fn force_build_is_set_only_for_plain_atom_app_names() {
+        assert!(force_source_build("exqlite").ends_with("-elixir_make force_build [{exqlite,true}]"));
+        assert!(!force_source_build("foo-bar").contains("force_build"));
+        assert!(!force_source_build("x',true}] -eval halt() -y [{'").contains("-eval"));
     }
 }
