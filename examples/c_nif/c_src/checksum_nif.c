@@ -2,7 +2,7 @@
  *
  * Plain C NIF code: nothing in it knows about wasm. `ampoule release` compiles it for wasm and
  * links it into the engine. Long inputs run on a dirty CPU scheduler so they do not hold up the
- * VM's normal schedulers. */
+ * VM's normal schedulers: about 0.1 ms of work at the threshold. */
 #include <stdint.h>
 
 #include "erl_nif.h"
@@ -58,11 +58,21 @@ static ERL_NIF_TERM crc32_nif(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[
     return enif_make_uint(env, crc32(bin.data, bin.size));
 }
 
+static ERL_NIF_TERM fnv1a_dirty(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    ErlNifBinary bin;
+    if (argc != 1 || !enif_inspect_binary(env, argv[0], &bin))
+        return enif_make_badarg(env);
+    return enif_make_uint64(env, fnv1a(bin.data, bin.size));
+}
+
 static ERL_NIF_TERM fnv1a_nif(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
     ErlNifBinary bin;
     if (argc != 1 || !enif_inspect_binary(env, argv[0], &bin))
         return enif_make_badarg(env);
+    if (bin.size > DIRTY_THRESHOLD)
+        return enif_schedule_nif(env, "fnv1a_dirty", ERL_NIF_DIRTY_JOB_CPU_BOUND, fnv1a_dirty, argc, argv);
     return enif_make_uint64(env, fnv1a(bin.data, bin.size));
 }
 

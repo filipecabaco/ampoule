@@ -23,10 +23,19 @@ defmodule Checksum.E2ETest do
     assert out =~ "vector: 1095738169"
   end
 
-  test "FNV-1a matches the published test vector", %{bin: bin} do
-    {out, 0} = PackedApp.run(bin, ["eval", ~S|IO.puts(Checksum.fnv1a("a"))|])
+  test "FNV-1a matches the published test vector, and an Elixir FNV-1a on a dirty-scheduler input", %{bin: bin} do
+    code = ~S"""
+    IO.puts("vector: #{Checksum.fnv1a("a")}")
+    import Bitwise
+    big = :binary.copy("ampoule", 20_000)
+    reference = for <<b <- big>>, reduce: 0xCBF29CE484222325, do: (h -> ((h ^^^ b) * 0x100000001B3) &&& 0xFFFFFFFFFFFFFFFF)
+    IO.puts("big: #{Checksum.fnv1a(big) == reference}")
+    """
+
+    {out, 0} = PackedApp.run(bin, ["eval", code])
     # FNV-1a 64 of "a" is 0xaf63dc4c8601ec8c.
-    assert out =~ Integer.to_string(0xAF63DC4C8601EC8C)
+    assert out =~ "vector: #{0xAF63DC4C8601EC8C}"
+    assert out =~ "big: true"
   end
 
   test "a bad argument raises, as from any NIF", %{bin: bin} do
