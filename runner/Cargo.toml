@@ -18,6 +18,7 @@ libc = "0.2"
 rustix = { version = "1.1", features = ["event", "fs", "net", "pipe", "process", "rand", "system", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 toml = "1"
 wasmtime = { version = "49", default-features = false, features = ["anyhow", "cranelift", "all-arch", "gc", "gc-drc", "threads", "parallel-compilation", "std", "runtime", "addr2line", "demangle"] }
 zstd = "0.14"
