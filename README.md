@@ -415,7 +415,9 @@ the binary.
 - setjmp/longjmp and C++ exceptions use wasm exception handling.
 
 Building NIFs needs [wasi-sdk](https://github.com/WebAssembly/wasi-sdk/releases) 34 and the engine
-kit. `ampoule` looks for them in `AMPOULE_WASI_SDK` and `AMPOULE_KIT`, then next to its own
+kit. It has to be 34 exactly: the kit is LLVM bitcode, for link-time optimisation of the relinked
+engine, and only the LLVM it was built with (23.1.0) can link it; `ampoule` says so if it finds
+another. `ampoule` looks for them in `AMPOULE_WASI_SDK` and `AMPOULE_KIT`, then next to its own
 executable (`wasi-sdk/`, `../wasi-sdk`, `kit/`), then under `~/.cache/ampoule/`. Release archives
 include the kit.
 

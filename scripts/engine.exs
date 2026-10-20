@@ -46,6 +46,12 @@ defmodule Engine do
   @emulated ~w(-D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_MMAN -D_WASI_EMULATED_GETPID)
   @emulated_libs ~w(-lwasi-emulated-mman -lwasi-emulated-signal -lwasi-emulated-process-clocks -lwasi-emulated-getpid)
 
+  # Link-time optimisation of the emulator: about 11% off interpreter-bound work (a reduce over 5M
+  # elements, 137 -> 122 ms) for 9.7% more beam.wasm. -flto goes to make, not configure's CFLAGS:
+  # configure's probe for a static OpenSSL links a -shared test program, which fails as bitcode.
+  # The kit's objects are then LLVM bitcode, so relinking with NIFs needs this exact LLVM (kit.json).
+  @lto_make ~w(ARCHCFLAGS=-flto)
+
   @openssl_options ~w(linux-generic32 no-asm no-shared no-dso no-engine no-afalgeng no-ui-console no-tests no-apps no-docs
                       no-module no-sock no-secure-memory no-async no-thread-pool no-default-thread-pool)
 
@@ -152,7 +158,7 @@ defmodule Engine do
     patch = Path.join(@root, "engine/patches/erts-wasi.patch")
     headers = Path.wildcard(Path.join(@root, "engine/ampoule-os/include/**/*.h"))
     conf = xcomp_conf(ctx)
-    inputs = [@otp, File.read!(patch), conf, stamp(ctx, :openssl), stamp(ctx, :aos) | Enum.map(headers, &File.read!/1)]
+    inputs = [@otp, File.read!(patch), conf, @lto_make, stamp(ctx, :openssl), stamp(ctx, :aos) | Enum.map(headers, &File.read!/1)]
 
     once(ctx, :erts, inputs, [beam(ctx)], fn ->
       otp = otp(ctx)
@@ -175,7 +181,7 @@ defmodule Engine do
       for dir <- ["erts/lib_src", "erts/emulator"] do
         log("make #{dir}")
 
-        cmd!("make", ["-j#{ctx.jobs}", "opt", "FLAVOR=emu"],
+        cmd!("make", ["-j#{ctx.jobs}", "opt", "FLAVOR=emu" | @lto_make],
           cd: Path.join(otp, dir),
           env: otp_env(ctx),
           log: Path.join(ctx.build, "erts.log")
@@ -247,6 +253,8 @@ defmodule Engine do
     kit = %{
       format: 1,
       erts_vsn: erts_vsn(ctx),
+      # The objects are LLVM bitcode (@lto_make): only this LLVM can link them.
+      llvm_version: llvm_version(ctx),
       link_flags: link_flags,
       objects: objects,
       archives: archives,
@@ -273,7 +281,7 @@ defmodule Engine do
     emu = Path.join(otp(ctx), "erts/emulator")
     bin = Path.join([otp(ctx), "bin", @target, "beam.emu"])
     File.rm(bin)
-    out = cmd!("make", ["-f", "#{@target}/Makefile", "TYPE=opt", "FLAVOR=emu", "V=1", bin], cd: emu, env: otp_env(ctx))
+    out = cmd!("make", ["-f", "#{@target}/Makefile", "TYPE=opt", "FLAVOR=emu", "V=1", bin | @lto_make], cd: emu, env: otp_env(ctx))
 
     args =
       out
@@ -330,7 +338,7 @@ defmodule Engine do
 
     cflags =
       Enum.join(
-        ["-O2", "-pthread", "-D_GNU_SOURCE"] ++
+        ["-O3", "-pthread", "-D_GNU_SOURCE"] ++
           @emulated ++ ["-isystem #{aos}/compat", "-include #{aos}/ampoule_os.h"],
         " "
       )
@@ -358,8 +366,8 @@ defmodule Engine do
     AR=#{tool(ctx, "llvm-ar")}
     RANLIB=#{tool(ctx, "llvm-ranlib")}
     CFLAGS="#{cflags}"
-    CXXFLAGS="-O2 -pthread"
-    LDFLAGS="-pthread -Wl,--import-memory,--max-memory=4294967296 -Wl,-z,stack-size=4194304"
+    CXXFLAGS="-O3 -pthread"
+    LDFLAGS="-pthread -Wl,--lto-O3 -Wl,--import-memory,--max-memory=4294967296 -Wl,-z,stack-size=4194304"
     LIBS="#{libs}"
     erl_xcomp_bigendian=no
     erl_xcomp_double_middle_endian=no
@@ -406,6 +414,18 @@ defmodule Engine do
   # Paths
 
   defp sdk(ctx), do: Path.join(ctx.build, "wasi-sdk")
+
+  # wasi-sdk's VERSION file names its LLVM: "llvm-version: 23.1.0".
+  defp llvm_version(ctx) do
+    sdk(ctx)
+    |> Path.join("VERSION")
+    |> File.read!()
+    |> then(&Regex.run(~r/^llvm-version: (\S+)$/m, &1, capture: :all_but_first))
+    |> case do
+      [v] -> v
+      _ -> fail("no llvm-version in #{Path.join(sdk(ctx), "VERSION")}")
+    end
+  end
   defp clang(ctx), do: Path.join(sdk(ctx), "bin/clang")
   defp tool(ctx, name), do: Path.join(sdk(ctx), "bin/#{name}")
   defp openssl(ctx), do: Path.join(ctx.build, "openssl")

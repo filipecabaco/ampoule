@@ -5,6 +5,20 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Faster. Measured on examples/francis (Apple M5 Pro, against v0.1.4): HTTP throughput +30% with
+  25% less CPU per request, and interpreter-bound Erlang 12–14% faster.
+  - Bounds checks on the guest's memory no longer take wasmtime's memory lock, which every
+    scheduler thread contended for on every system call.
+  - The engine is built with link-time optimisation (`-O3`, `--lto-O3`); `beam.wasm` is 9.7%
+    larger.
+  - The macOS arm64 engine is compiled for LSE, the single-instruction atomics every Apple Silicon
+    CPU has. Linux arm64 keeps the ARMv8.0 baseline, so ARMv8.0 cores still run it.
+- Packing an app with NIFs needs wasi-sdk 34 exactly: the engine kit is now LLVM bitcode, and
+  `ampoule` stops with a clear message when the wasi-sdk's LLVM differs. Relinking takes about 12 s
+  instead of 1 s.
+
 ## [0.1.4] - 2026-10-20
 
 ### Added

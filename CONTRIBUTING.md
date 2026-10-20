@@ -37,6 +37,12 @@ over from an earlier configuration keep its feature macros. The patch also fixes
 build, which otherwise drops configure's `SSL_FLAGS` and compiles out `CRYPTO_memcmp`, the call every
 TLS record goes through.
 
+The emulator is built with link-time optimisation: `-flto` goes to `make` (not to configure's
+`CFLAGS`, where OpenSSL's link probe would fail as bitcode) and `--lto-O3` to the link. The kit's
+objects are therefore LLVM bitcode, and `kit.json` records the LLVM version that can link them.
+`runner/src/engine.rs` (`for_target`) holds the CPU features each target's precompiled engine may
+assume.
+
 To change ERTS, unpack OTP somewhere, apply the patch, make the change, and write the patch back with
 `git diff` (or `diff -ru`) from the OTP root. `engine/ampoule-os/include/ampoule_os.h` is
 force-included into every ERTS and NIF compile. It maps the POSIX calls wasi-libc lacks onto the
