@@ -106,7 +106,7 @@ This needs wasi-sdk on the packing machine (see [NIFs](#nifs)). The machine that
 needs nothing.
 
 [`examples/`](examples) has complete apps, each with an end-to-end suite that packs the app,
-runs the binary and tests it over HTTP:
+runs the binary and tests it from the outside:
 
 | Example | Shows |
 |---|---|
