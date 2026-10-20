@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-20
+
 ### Added
 
 - Host programs: ports, `System.cmd/3` and `:os.cmd/1` start the host programs listed in
