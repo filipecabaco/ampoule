@@ -81,7 +81,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
-        example: [francis, phoenix_ecto, ports, rustler]
+        example: [francis, phoenix_ecto, ports, rustler, sqlite]
         exclude:
           # Needs Postgres, and macOS runners cannot run service containers.
           - os: macos-15

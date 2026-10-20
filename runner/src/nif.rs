@@ -218,14 +218,63 @@ fn apply_fixups(dir: &Path) -> Result<usize> {
             continue;
         }
         let Ok(src) = std::fs::read_to_string(&p) else { continue };
-        let Some(start) = src.find("\nstruct iovec {") else { continue };
-        let Some(len) = src[start..].find("};") else { continue };
-        let end = start + len + 2;
-        let patched = format!("{}\n#ifndef __wasi__{}\n#endif{}", &src[..start], &src[start..end], &src[end..]);
-        std::fs::write(&p, patched)?;
-        fixed += 1;
+        // Only the amalgamation (a .c file) takes the SQLite stubs: sqlite3.h carries the same
+        // WASI block, and definitions in a header would be duplicated wherever it is included.
+        let is_c = p.extension().and_then(|e| e.to_str()) == Some("c");
+        let patched = is_c.then(|| fixup_sqlite(&src)).flatten().or_else(|| fixup_iovec(&src));
+        if let Some(patched) = patched {
+            std::fs::write(&p, patched)?;
+            fixed += 1;
+        }
     }
     Ok(fixed)
+}
+
+/// `ERL_FLAGS` for building `app`: the caller's own, plus elixir_make's `force_build` for `app`,
+/// set as an application parameter. Dependencies with precompiled NIFs (cc_precompiler, as
+/// exqlite uses) otherwise download a library built for the host instead of running `make`, and
+/// leave nothing for wasm.
+fn force_source_build(app: &str) -> String {
+    let own = std::env::var("ERL_FLAGS").unwrap_or_default();
+    format!("{own} -elixir_make force_build [{{'{app}',true}}]").trim_start().to_string()
+}
+
+fn fixup_iovec(src: &str) -> Option<String> {
+    let start = src.find("\nstruct iovec {")?;
+    let end = start + src[start..].find("};")? + 2;
+    Some(format!("{}\n#ifndef __wasi__{}\n#endif{}", &src[..start], &src[start..end], &src[end..]))
+}
+
+/// The SQLite amalgamation's WASI support, completed for a NIF. ampoule compiles NIFs with
+/// `__linux__` defined, which turns SQLite's memory-mapped I/O on; under WASI SQLite has left out
+/// <sys/mman.h>, so that code does not build: it is switched off instead (reads go through
+/// read(), as with `PRAGMA mmap_size = 0`). And WASI leaves out loading extensions, which a
+/// wrapper NIF such as exqlite still calls: stubs report that it cannot be done.
+fn fixup_sqlite(src: &str) -> Option<String> {
+    const WASI: &str = "# define SQLITE_WASI 1\n";
+    const MARK: &str = "ampoule: SQLite under WASI";
+    if src.contains(MARK) || !src.contains("SQLITE_VERSION") {
+        return None;
+    }
+    let at = src.find(WASI)? + WASI.len();
+    let mmap = format!("/* {MARK}: no memory-mapped I/O. */\n# ifndef SQLITE_MAX_MMAP_SIZE\n#  define SQLITE_MAX_MMAP_SIZE 0\n# endif\n");
+    let stubs = format!(
+        r#"
+/* {MARK}: there is no dynamic loading, so extensions cannot be loaded. */
+#if defined(__wasi__) && defined(SQLITE_OMIT_LOAD_EXTENSION)
+SQLITE_API int sqlite3_enable_load_extension(sqlite3 *db, int onoff){{
+  (void)db;
+  return onoff ? SQLITE_ERROR : SQLITE_OK;
+}}
+SQLITE_API int sqlite3_load_extension(sqlite3 *db, const char *zFile, const char *zProc, char **pzErrMsg){{
+  (void)db; (void)zFile; (void)zProc;
+  if( pzErrMsg ) *pzErrMsg = sqlite3_mprintf("extensions cannot be loaded under WASI");
+  return SQLITE_ERROR;
+}}
+#endif
+"#
+    );
+    Some(format!("{}{mmap}{}{stubs}", &src[..at], &src[at..]))
 }
 
 fn is_archive(p: &Path) -> bool {
@@ -449,6 +498,7 @@ pub fn build(project: &Path, mix_env: &str, natives: &[NativeLib], tc: &Toolchai
             .env("AR", tc.ar())
             .env("RANLIB", tc.wasi_sdk.join("bin/llvm-ranlib"))
             .env("AMPOULE_NIF_LIBNAME", &lib.libname)
+            .env("ERL_FLAGS", force_source_build(app))
             .env("AMPOULE_WASI_SDK", &tc.wasi_sdk)
             .env("AMPOULE_KIT", &tc.kit)
             .status()
@@ -570,7 +620,7 @@ pub fn precompile(wasm: &[u8], target: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_llvm, copy_project, project_app, skip_in_copy};
+    use super::{check_llvm, copy_project, fixup_sqlite, project_app, skip_in_copy};
 
     #[test]
     fn a_bitcode_kit_links_only_with_its_own_llvm() {
@@ -623,5 +673,16 @@ mod tests {
         assert!(dst.join("native/crate/Cargo.toml").is_file() && !dst.join("native/crate/target").exists());
         assert_eq!(std::fs::read_link(dst.join(".#mix.exs")).unwrap(), std::path::Path::new("/nonexistent/target"));
         assert_eq!(project_app(&src).as_deref(), Some("checksum"));
+    }
+
+    #[test]
+    fn sqlite_under_wasi_gets_no_mmap_and_extension_stubs_once() {
+        let amalgamation = "#define SQLITE_VERSION \"3.54.1\"\n#if defined(__wasi__)\n# undef SQLITE_WASI\n# define SQLITE_WASI 1\n#endif\nint body;\n";
+        let patched = fixup_sqlite(amalgamation).unwrap();
+        let wasi = patched.find("# define SQLITE_WASI 1").unwrap();
+        assert!(patched.find("#  define SQLITE_MAX_MMAP_SIZE 0").unwrap() > wasi);
+        assert!(patched.ends_with("#endif\n") && patched.contains("sqlite3_enable_load_extension"));
+        assert_eq!(fixup_sqlite(&patched), None);
+        assert_eq!(fixup_sqlite("int unrelated;\n"), None);
     }
 }
