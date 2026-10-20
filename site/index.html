@@ -13,7 +13,7 @@
   <meta property="og:url" content="https://filipecabaco.github.io/ampoule/">
   <meta property="og:title" content="ampoule: one executable for your Elixir release">
   <meta property="og:description" content="Pack an Elixir or Erlang release into one file for macOS and Linux: the release, the BEAM as WebAssembly, and the OS layer it runs on. Copy it over and run it.">
-  <meta property="og:image" content="https://filipecabaco.github.io/ampoule/og.png">
+  <meta property="og:image" content="https://filipecabaco.github.io/ampoule/og.png?v=2">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -21,7 +21,7 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ampoule: one executable for your Elixir release">
   <meta name="twitter:description" content="Pack an Elixir or Erlang release into one file for macOS and Linux. Two steps.">
-  <meta name="twitter:image" content="https://filipecabaco.github.io/ampoule/og.png">
+  <meta name="twitter:image" content="https://filipecabaco.github.io/ampoule/og.png?v=2">
   <meta name="twitter:image:alt" content="ampoule: pack an Elixir or Erlang release into one executable, in two steps.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preload" href="fonts/familjen-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -71,7 +71,8 @@
       <span class="part-no">AM–0061736D</span>
     </a>
     <nav class="masthead-nav" aria-label="Site">
-      <a href="#more">Steps 3–6</a>
+      <a href="#more">Steps 3–9</a>
+      <a href="#report">Test report</a>
       <a href="#specs">Specifications</a>
       <a href="https://github.com/filipecabaco/ampoule">GitHub</a>
     </nav>
@@ -180,7 +181,7 @@ _build/prod/ampoule/my_app-aarch64-darwin (26.3 MiB)
     </section>
 
     <section class="more" id="more" aria-labelledby="more-title">
-      <h2 id="more-title" class="sheet-title">Steps 3 to 6, when you need them</h2>
+      <h2 id="more-title" class="sheet-title">Steps 3 to 9, when you need them</h2>
 
       <article class="step-page">
         <span class="step-no small" aria-hidden="true">3</span>
@@ -229,6 +230,39 @@ CMD ["start"]</code></pre>
     --target aarch64-darwin --target x86_64-linux</code></pre>
         </div>
       </article>
+
+      <article class="step-page">
+        <span class="step-no small" aria-hidden="true">7</span>
+        <div>
+          <h3>Let it start host programs</h3>
+          <p>Ports, <code>System.cmd/3</code> and <code>:os.cmd/1</code> start the programs you list in <code>ampoule.toml</code>, and nothing else. Each runs on the host, and the app finds it at its usual path.</p>
+          <pre class="cmd"><code>[process]
+allow = ["uname", "/bin/sh"]</code></pre>
+          <pre class="cmd"><code>System.cmd("uname", ["-s"])
+<span class="o">#=&gt; {"Darwin\n", 0}</span></code></pre>
+        </div>
+      </article>
+
+      <article class="step-page">
+        <span class="step-no small" aria-hidden="true">8</span>
+        <div>
+          <h3>Bring your NIFs</h3>
+          <p>C, C++ and Rust NIFs are rebuilt for wasm while it packs. The packing machine needs wasi-sdk; the machine that runs the file needs nothing.</p>
+          <pre class="cmd"><code><span class="p">$</span> ampoule release
+<span class="o">==&gt; building eiconv for wasm (priv/eiconv_nif.so)
+==&gt; linking the engine with 1 NIF(s): eiconv_nif</span></code></pre>
+        </div>
+      </article>
+
+      <article class="step-page">
+        <span class="step-no small" aria-hidden="true">9</span>
+        <div>
+          <h3>Cap its memory. Restart it if it runs out.</h3>
+          <pre class="cmd"><code><span class="p">$</span> ./my_app-aarch64-darwin --memory-max 512M \
+    --restart on-failure start</code></pre>
+          <p>At 80% of the cap, OTP’s <code>system_memory_high_watermark</code> alarm goes up, so the app can shed load. If the VM still runs out, it starts again with its listening sockets held open. After five failures in five minutes it exits, for systemd or Kubernetes to take over.</p>
+        </div>
+      </article>
     </section>
 
     <section class="rules" aria-labelledby="rules-title">
@@ -239,13 +273,15 @@ CMD ["start"]</code></pre>
           <ul>
             <li>Phoenix, Ecto, Francis, plain OTP: <a href="https://github.com/filipecabaco/ampoule/tree/main/examples">three examples</a>, each with an end-to-end suite.</li>
             <li>NIFs in C, C++ or Rust, rebuilt for wasm when you pack. That needs <a href="https://github.com/WebAssembly/wasi-sdk/releases">wasi-sdk</a> 34, and Rust NIFs also need <code>rustup target add wasm32-wasip1-threads</code>.</li>
+            <li>Host programs you allow: ports, <code>System.cmd/3</code> and <code>:os.cmd/1</code>, with exit statuses, <code>os_pid</code> and <code>{:packet, N}</code> as on a native release.</li>
+            <li>Unix domain sockets (<code>{:local, path}</code>) at the app’s own paths, host services included when you mount them in.</li>
             <li>Elixir and Erlang/OTP 28 on the machine that packs. Nothing on the machine that runs.</li>
           </ul>
         </div>
         <div class="rule-col">
           <h3><svg class="rule-icon no" aria-hidden="true"><use href="#no"/></svg> Does not work</h3>
           <ul>
-            <li>Starting host programs: ports, <code>:os.cmd/1</code> and <code>System.cmd/3</code> cannot start anything.</li>
+            <li>Programs shipped inside the release, in <code>priv/</code>: packing leaves them out.</li>
             <li>Erlang distribution: the app runs as one node.</li>
             <li>An OTP major other than 28: the engine runs ERTS 16.</li>
             <li>A NIF thread that calls <code>enif_thread_exit</code>: it ends without cleanup and joining it never returns. Return from the thread function instead.</li>
@@ -254,7 +290,8 @@ CMD ["start"]</code></pre>
       </div>
       <h3 class="aside-title">Good to know</h3>
       <ul class="aside-list">
-        <li>The app reports itself as Linux on every host: <code>:os.type()</code> returns <code>{:unix, :linux}</code>.</li>
+        <li>The app reports itself as Linux on every host: <code>:os.type()</code> returns <code>{:unix, :linux}</code>. <code>System.pid/0</code> is the real host pid.</li>
+        <li>A program the app starts runs on the host and sees the host’s files. Its path and <code>cd:</code> are translated from the app’s; its arguments are not.</li>
         <li>Each run gets a private <code>/tmp</code>, removed when the app exits. A run that wrote <code>erl_crash.dump</code> keeps it and prints where.</li>
         <li>Precompressed static files (<code>.gz</code>, <code>.br</code>) are not packed; <code>Plug.Static</code> serves the uncompressed file.</li>
         <li><code>.beam</code> files lose their debug and docs chunks, so <code>Code.fetch_docs/1</code> has nothing to show.</li>
@@ -305,13 +342,70 @@ CMD ["start"]</code></pre>
           </g>
         </svg>
         <ol class="file">
-          <li><span class="callout">1</span><span class="seg-name">ampoule runtime</span><span class="seg-desc">The OS layer, in Rust on wasmtime: WASI, threads, sockets, signals, a mount table and <code>/proc</code>.</span></li>
+          <li><span class="callout">1</span><span class="seg-name">ampoule runtime</span><span class="seg-desc">The OS layer, in Rust on wasmtime: WASI, threads, sockets, host programs, signals, a mount table and <code>/proc</code>.</span></li>
           <li><span class="callout">2</span><span class="seg-name">Release image</span><span class="seg-desc">Your release, one compressed frame per file.</span></li>
           <li><span class="callout">3</span><span class="seg-name">Engine with NIFs</span><span class="seg-desc">Dashed: only there when the app has NIFs. The BEAM relinked with them and precompiled for the target.</span></li>
           <li><span class="callout">4</span><span class="seg-name">Manifest</span><span class="seg-desc">Your commands, <code>serve</code> order, environment defaults and network policy.</span></li>
           <li><span class="callout">5</span><span class="seg-name">Trailer</span><span class="seg-desc">Where each section starts.</span></li>
         </ol>
       </figure>
+    </section>
+
+    <section class="specs report" id="report" aria-labelledby="report-title">
+      <h2 id="report-title" class="sheet-title">Test report</h2>
+      <p class="rig">Apple M5 Pro, 6 performance and 12 efficiency cores, 48 GB, macOS 26.7.</p>
+      <figure class="scaling">
+        <!-- Measured speedup of one CPU-bound job (36 tasks of 50 million integer steps) as schedulers are added.
+             x: 0..18 schedulers -> 56..616; y: 0..18x -> 380..40. Each point is against its own run's one-scheduler time. -->
+        <svg viewBox="0 0 640 440" role="img" aria-labelledby="scaling-title scaling-desc">
+          <title id="scaling-title">Speedup as schedulers are added</title>
+          <desc id="scaling-desc">One scheduler 1×, 2 schedulers 1.98×, 4 schedulers 3.45×, 6 schedulers 4.9×, 8 schedulers 6.3×, 12 schedulers 8.37×, 18 schedulers 10.7×. Close to linear across the six performance cores, then slower on the efficiency cores.</desc>
+          <g class="grid">
+            <path d="M56 285.6 H616 M56 191.1 H616 M56 96.7 H616"/>
+          </g>
+          <g class="axis">
+            <path d="M56 40 V380 H616"/>
+            <text x="48" y="384" class="y">0</text>
+            <text x="48" y="290" class="y">5×</text>
+            <text x="48" y="195" class="y">10×</text>
+            <text x="48" y="101" class="y">15×</text>
+            <text x="87.1" y="404">1</text><text x="118.2" y="404">2</text><text x="180.4" y="404">4</text><text x="242.7" y="404">6</text>
+            <text x="304.9" y="404">8</text><text x="429.3" y="404">12</text><text x="616" y="404">18</text>
+            <text x="336" y="434" class="title">schedulers, one per core</text>
+          </g>
+          <path class="cores" d="M242.7 380 V52"/>
+          <text x="236" y="56" class="cores-label end">performance<tspan class="long"> cores</tspan></text>
+          <text x="250" y="56" class="cores-label">efficiency<tspan class="long"> cores</tspan></text>
+          <path class="ideal" d="M56 380 L616 40"/>
+          <text x="560" y="62" class="ideal-label" transform="rotate(-31.3 560 62)">perfectly linear</text>
+          <path class="measured" d="M87.1 361.1 L118.2 342.6 L180.4 314.8 L242.7 287.4 L304.9 261 L429.3 221.9 L616 177.9"/>
+          <g class="points">
+            <circle cx="87.1" cy="361.1" r="5"><title>1 scheduler: 1×</title></circle>
+            <circle cx="118.2" cy="342.6" r="5"><title>2 schedulers: 1.98×</title></circle>
+            <circle cx="180.4" cy="314.8" r="5"><title>4 schedulers: 3.45×</title></circle>
+            <circle cx="242.7" cy="287.4" r="5"><title>6 schedulers: 4.9×</title></circle>
+            <circle cx="304.9" cy="261" r="5"><title>8 schedulers: 6.3×</title></circle>
+            <circle cx="429.3" cy="221.9" r="5"><title>12 schedulers: 8.37×</title></circle>
+            <circle cx="616" cy="177.9" r="5"><title>18 schedulers: 10.7×</title></circle>
+          </g>
+          <text x="610" y="160" class="end-label end">10.7×</text>
+        </svg>
+        <figcaption>One job split into 36 tasks of integer arithmetic, timed at each scheduler count. Every scheduler is a host thread: the speedup follows the cores, close to linear on the six performance cores.</figcaption>
+      </figure>
+      <table>
+        <caption class="visually-hidden">Measured results on the machine above</caption>
+        <tbody>
+          <tr><th scope="row">The job above, 18 schedulers against 1</th><td>10.7×</td></tr>
+          <tr><th scope="row">CPU-bound Erlang against native Erlang with its JIT</th><td>1.1–6× <span class="aside">slower: integer loops 1.1×, sorting lists 2.3×, folding a long list 6×</span></td></tr>
+          <tr><th scope="row">From launch to first HTTP response, examples/francis</th><td>285 ms <span class="aside">native release: 380 ms</span></td></tr>
+          <tr><th scope="row">HTTP requests per second, 50 keep-alive connections</th><td>45–58k <span class="aside">native release: 80–87k</span></td></tr>
+          <tr><th scope="row">Memory after that load</th><td>137–141 MB <span class="aside">native release: 170–176 MB</span></td></tr>
+          <tr><th scope="row">Idle memory of a small app, with 1 and with 18 schedulers</th><td>69 / 94 MB</td></tr>
+          <tr><th scope="row">Smallest <code>--memory-max</code> that boots, 1 and 18 schedulers</th><td>80 / 128 MiB</td></tr>
+          <tr><th scope="row">Starting a host program, <code>System.cmd/3</code></th><td>19 ms <span class="aside">20 at once: 57 ms</span></td></tr>
+          <tr><th scope="row">First restart after running out of memory, with <code>--restart</code></th><td>1 s <span class="aside">then 2, 4, 8, 16 s</span></td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section class="specs" id="specs" aria-labelledby="specs-title">
@@ -324,7 +418,7 @@ CMD ["start"]</code></pre>
           <tr><th scope="row">First HTTP response after launch</th><td>0.3 s <span class="aside">1 s cold</span></td></tr>
           <tr><th scope="row"><code>docker stop</code>, <code>FROM scratch</code> container</th><td>1 s, clean</td></tr>
           <tr><th scope="row">Supabase Realtime, its own end-to-end suite</th><td>53 / 53</td></tr>
-          <tr><th scope="row">The examples' end-to-end suites</th><td>22 / 22</td></tr>
+          <tr><th scope="row">The examples' end-to-end suites</th><td>31 / 31</td></tr>
           <tr><th scope="row">Targets</th><td class="text">aarch64-darwin, x86_64-darwin, aarch64-linux, x86_64-linux</td></tr>
           <tr><th scope="row">Engine</th><td class="text">ERTS 16.4.0.4 from Erlang/OTP 28.5.0.4, <code>wasm32-wasip1-threads</code></td></tr>
           <tr><th scope="row">Licence</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/blob/main/LICENSE">Apache-2.0</a></td></tr>

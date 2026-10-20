@@ -40,8 +40,10 @@ running needs nothing.
 
 - Targets: aarch64-darwin, x86_64-darwin, aarch64-linux, x86_64-linux.
 - OTP major fixed by the engine (OTP 28, ERTS 16).
-- No host processes (ports, `System.cmd`), one node (no distribution), NIF threads must return
-  rather than call `enif_thread_exit`.
+- Host programs (ports, `System.cmd`, `:os.cmd`) only when listed in `[process] allow`; programs
+  shipped in `priv/` are not packed. Unix domain sockets, `File.chmod`, the host pid, a memory alarm
+  and restart-on-failure since v0.1.4.
+- One node (no distribution); NIF threads must return rather than call `enif_thread_exit`.
 - Released: v0.1.4 on GitHub Releases, one binary per target.
 
 ## Brand Commitments
@@ -68,10 +70,22 @@ running needs nothing.
 - Supabase Realtime, a large production Phoenix app, passed its own end-to-end suite (53/53) when
   packed (`scripts/realtime.exs`, run before the rename).
 - Three examples with end-to-end suites: `examples/phoenix_ecto`, `examples/francis`,
-  `examples/rustler`; 22 tests in all (6, 9 and 7), all passing on 2026-10-13
-  (`scripts/examples.exs`).
+  `examples/rustler`; 31 tests in all (6, 18 and 7), all passing on 2026-10-20
+  (`scripts/examples.exs`) and in CI on macOS and Linux.
+- Measured on an Apple M5 Pro (6 performance + 12 efficiency cores, 48 GB, macOS 26.7), 2026-10-20:
+  - One CPU-bound job (36 tasks × 50M integer steps) against 1 scheduler: 1.98× at 2, 3.45× at 4,
+    4.9× at 6, 6.3× at 8, 8.37× at 12, 10.7× at 18 (11.2× in a second run).
+  - Against native Erlang with the JIT: 1.1–1.2× slower on integer arithmetic, 2.3× slower building
+    and sorting lists, 6× slower folding a 5M-element list (139 vs 23 ms).
+  - examples/francis, v0.1.4, packed against the native release: launch to first HTTP 200 285 ms
+    vs 380 ms (median of 5, warm; native includes its bash start script); `ab` keep-alive with 50
+    connections 45–58k vs 80–87k requests/s; RSS after that load 137–141 MB vs 170–176 MB.
+  - Idle RSS of a small app: 69 MB with 1 scheduler, 94 MB with 18. Smallest `--memory-max` that
+    boots: 80 MiB (1 scheduler), 128 MiB (18).
+  - `System.cmd/3` of a host program: 19 ms; 20 at once: 57 ms.
+  - `--restart on-failure` after running out of memory: first restart after 1 s, then 2, 4, 8, 16 s.
 - Absent, and not to be implied: users, testimonials, company logos, download counts, benchmarks
-  against other tools.
+  against other tools (the native-Erlang comparison is ampoule's own overhead, not another tool).
 
 ## Product Principles
 
