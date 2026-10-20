@@ -113,6 +113,7 @@ runs the binary and tests it from the outside:
 | [`phoenix_ecto`](examples/phoenix_ecto) | Phoenix JSON API on Ecto and Postgres; `serve` creates and migrates the database, then starts |
 | [`francis`](examples/francis) | Francis: HTML, JSON, server-sent events, the network policy |
 | [`ports`](examples/ports) | host programs: `System.cmd/3`, `:os.cmd/1` and a supervised long-running port |
+| [`sqlite`](examples/sqlite) | SQLite through exqlite's C NIF, with the database in a mounted host directory |
 | [`rustler`](examples/rustler) | a Rustler NIF in the project's own `native/` crate |
 
 ## Install
@@ -425,9 +426,9 @@ another. `ampoule` looks for them in `AMPOULE_WASI_SDK` and `AMPOULE_KIT`, then 
 executable (`wasi-sdk/`, `../wasi-sdk`, `kit/`), then under `~/.cache/ampoule/`. Release archives
 include the kit.
 
-Tested with C (eiconv), C with setjmp/longjmp (libpg_query, through `pg_query_ex`), C++ with
-exceptions (snappy, prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have
-one native library.
+Tested with C (eiconv, and SQLite through `exqlite`: see [`examples/sqlite`](examples/sqlite)), C
+with setjmp/longjmp (libpg_query, through `pg_query_ex`), C++ with exceptions (snappy,
+prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have one native library.
 
 ## Limitations
 

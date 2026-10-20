@@ -11,6 +11,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
   runs `$(CC)`) are rebuilt for wasm when packing, as the project's own Rust NIFs in `native/`
   already were. Before, packing failed with "neither a dependency nor has native/".
 
+### Fixed
+
+- NIF dependencies built by `elixir_make` with precompiled binaries (`cc_precompiler`, as exqlite
+  uses) are built from source when packing; they used to download a library built for the host
+  and fail with "no wasm archive".
+- SQLite's amalgamation builds under WASI inside a NIF: memory-mapped I/O is off (it did not
+  compile with `__linux__` defined), and loading extensions, which WASI leaves out, returns an
+  error instead of failing to link. exqlite now packs; see `examples/sqlite`.
+
 ## [0.1.5] - 2026-10-20
 
 ### Changed
