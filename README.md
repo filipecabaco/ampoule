@@ -111,6 +111,7 @@ runs the binary and tests it from the outside:
 | Example | Shows |
 |---|---|
 | [`phoenix_ecto`](examples/phoenix_ecto) | Phoenix JSON API on Ecto and Postgres; `serve` creates and migrates the database, then starts |
+| [`c_nif`](examples/c_nif) | the project's own C NIF in `c_src/`, built by `elixir_make` |
 | [`francis`](examples/francis) | Francis: HTML, JSON, server-sent events, the network policy |
 | [`ports`](examples/ports) | host programs: `System.cmd/3`, `:os.cmd/1` and a supervised long-running port |
 | [`sqlite`](examples/sqlite) | SQLite through exqlite's C NIF, with the database in a mounted host directory |

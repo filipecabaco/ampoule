@@ -6,6 +6,7 @@ Small apps, each packed into a single binary by `ampoule`, each with an end-to-e
 | Example | Shows |
 |---|---|
 | [`phoenix_ecto`](phoenix_ecto) | Phoenix JSON API on Ecto/Postgres; `serve` creates and migrates the database, then starts |
+| [`c_nif`](c_nif) | The project's own C NIF (`c_src/` with `elixir_make`), rebuilt for wasm at pack time |
 | [`francis`](francis) | Francis: HTML, JSON, server-sent events, the network policy |
 | [`ports`](ports) | Host programs: `System.cmd/3`, an `:os.cmd/1` pipeline, and a supervised long-running port |
 | [`sqlite`](sqlite) | SQLite through exqlite's C NIF, rebuilt for wasm; the database lives in a mounted host directory |
