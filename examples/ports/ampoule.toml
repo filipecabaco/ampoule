@@ -1,0 +1,10 @@
+# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+
+[process]
+# The only programs the app itself may start. /bin/sh runs :os.cmd/1 and the long-running port
+# (and, being a shell, whatever its scripts call, such as tr and wc); kill lets the e2e suite stop
+# the port's program to show the supervisor starting it again.
+allow = ["uname", "/bin/sh", "kill"]
+
+[commands]
+host = "Porter.CLI.host()"

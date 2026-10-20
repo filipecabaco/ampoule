@@ -1,12 +1,13 @@
 # Examples
 
-Three small apps, each packed into a single binary by `ampoule`, each with an end-to-end suite
+Small apps, each packed into a single binary by `ampoule`, each with an end-to-end suite
 (`test/e2e`) that packs the app, runs the real binary and checks it from the outside.
 
 | Example | Shows |
 |---|---|
 | [`phoenix_ecto`](phoenix_ecto) | Phoenix JSON API on Ecto/Postgres; `serve` creates and migrates the database, then starts |
 | [`francis`](francis) | Francis: HTML, JSON, server-sent events, the network policy |
+| [`ports`](ports) | Host programs: `System.cmd/3`, an `:os.cmd/1` pipeline, and a supervised long-running port |
 | [`rustler`](rustler) | A Rustler NIF in the project's own `native/` crate, rebuilt for wasm at pack time |
 
 Run one:
