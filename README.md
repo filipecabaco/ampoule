@@ -105,13 +105,14 @@ _build/prod/ampoule/my_app-aarch64-darwin (35.5 MiB)
 This needs wasi-sdk on the packing machine (see [NIFs](#nifs)). The machine that runs the binary
 needs nothing.
 
-[`examples/`](examples) has three complete apps, each with an end-to-end suite that packs the app,
-runs the binary and tests it over HTTP:
+[`examples/`](examples) has complete apps, each with an end-to-end suite that packs the app,
+runs the binary and tests it from the outside:
 
 | Example | Shows |
 |---|---|
 | [`phoenix_ecto`](examples/phoenix_ecto) | Phoenix JSON API on Ecto and Postgres; `serve` creates and migrates the database, then starts |
 | [`francis`](examples/francis) | Francis: HTML, JSON, server-sent events, the network policy |
+| [`ports`](examples/ports) | host programs: `System.cmd/3`, `:os.cmd/1` and a supervised long-running port |
 | [`rustler`](examples/rustler) | a Rustler NIF in the project's own `native/` crate |
 
 ## Install
