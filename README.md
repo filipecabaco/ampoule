@@ -409,6 +409,9 @@ the binary.
   This runs on private copies of `deps/` and `_build/` under `_build/ampoule-nif/`, so the project
   itself is left as it was. The wrappers compile for wasm32 against the static NIF API and turn the
   shared-library link into a wasm archive at the same path.
+- The project's own C and C++ NIF (say `c_src/` built by `elixir_make` and a Makefile) is built
+  the same way, by `mix compile --force` in a copy of the project. The Makefile only has to use
+  `$(CC)`; [`examples/c_nif`](examples/c_nif) is one.
 - Rust NIFs (Rustler, in a dependency or in the project's own `native/`) are built with cargo for
   `wasm32-wasip1-threads`, which needs `rustup target add wasm32-wasip1-threads`. Rustler is patched
   to resolve the `enif_*` API statically. Return errors from Rust rather than panicking: on wasm a

@@ -306,10 +306,17 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
             })?;
             let tc = toolchain::Toolchain::locate()?;
             let natives = nif::natives(&stats.foreign_native);
-            let built = nif::build(&project, &mix_env, &natives, &tc)?;
-            eprintln!("==> linking the engine with {} NIF(s): {}", built.len(), built.iter().map(|b| b.libname.as_str()).collect::<Vec<_>>().join(", "));
-            engine_wasm = Some(nif::link_engine(&tc, &built, &project.join("_build/ampoule-nif/engine"))?);
-            manifest.nifs = built.iter().map(|b| b.libname.clone()).collect();
+            let linked = (|| -> Result<_> {
+                let built = nif::build(&project, &mix_env, &natives, &tc)?;
+                eprintln!("==> linking the engine with {} NIF(s): {}", built.len(), built.iter().map(|b| b.libname.as_str()).collect::<Vec<_>>().join(", "));
+                let wasm = nif::link_engine(&tc, &built, &project.join("_build/ampoule-nif/engine"))?;
+                Ok((wasm, built.iter().map(|b| b.libname.clone()).collect()))
+            })();
+            // Whether the build worked or not: the project copy is not left under _build.
+            nif::remove_project_copy(&project);
+            let (wasm, nifs) = linked?;
+            engine_wasm = Some(wasm);
+            manifest.nifs = nifs;
         }
     }
     let out_dir = match &a.out {
