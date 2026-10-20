@@ -1,6 +1,7 @@
 //! Native code in a release (NIFs) rebuilt for wasm and linked into a per-app engine.
 //!
-//! Each dependency with native code is recompiled by Mix itself (`mix deps.compile DEP --force`)
+//! Each dependency with native code is recompiled by Mix itself (`mix deps.compile DEP --force`;
+//! for the project's own NIF, `mix compile --force` in a copy of the project)
 //! with CC/CXX pointing at `ampoule-cc`/`ampoule-c++` (see `toolchain`), so whatever drives
 //! its build (rebar3's port compiler, elixir_make, cmake) produces a wasm archive where it would
 //! produce the shared library. This happens on private copies of the project's `deps/` and
@@ -89,6 +90,26 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
         } else if ft.is_symlink() {
             let target = std::fs::read_link(entry.path())?;
             let _ = std::os::unix::fs::symlink(target, &dest);
+        } else {
+            std::fs::copy(entry.path(), &dest)?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy the Mix project at `from` to `to` for building its own NIF, without what the build
+/// recreates or reads from elsewhere (`_build`, `deps`) and without version control.
+fn copy_project(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from).with_context(|| format!("reading {}", from.display()))? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if matches!(name.to_str(), Some("_build" | "deps" | ".git" | ".elixir_ls")) {
+            continue;
+        }
+        let dest = to.join(&name);
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &dest)?;
         } else {
             std::fs::copy(entry.path(), &dest)?;
         }
@@ -325,13 +346,15 @@ pub fn build(project: &Path, mix_env: &str, natives: &[NativeLib], tc: &Toolchai
             );
         }
         let lib = libs[0];
-        // A NIF of the project's own app lives in <project>/native, not deps/.
-        let dep_dir = if deps.join(app).is_dir() {
-            deps.join(app)
+        // A NIF of the project's own app is built from a copy of the project: Rust from its
+        // native/, C and C++ by its own compilers (elixir_make and a Makefile over c_src/, say).
+        let own = !deps.join(app).is_dir();
+        let dep_dir = if own {
+            let dir = work.join("app").join(app);
+            copy_project(project, &dir)?;
+            dir
         } else {
-            let own = work.join("app").join(app);
-            copy_tree(&project.join("native"), &own.join("native")).with_context(|| format!("{app} is neither a dependency nor has native/ in the project"))?;
-            own
+            deps.join(app)
         };
         clean_host_artifacts(&dep_dir)?;
         apply_fixups(&dep_dir)?;
@@ -341,9 +364,13 @@ pub fn build(project: &Path, mix_env: &str, natives: &[NativeLib], tc: &Toolchai
         }
         let _ = std::fs::remove_dir_all(build.join("lib").join(app));
         eprintln!("==> building {app} for wasm ({})", lib.rel_path);
-        let status = Command::new("mix")
-            .args(["deps.compile", app, "--force"])
-            .current_dir(project)
+        let mut mix = Command::new("mix");
+        if own {
+            mix.args(["compile", "--force"]).current_dir(&dep_dir);
+        } else {
+            mix.args(["deps.compile", app, "--force"]).current_dir(project);
+        }
+        let status = mix
             .env("MIX_ENV", mix_env)
             .env("PATH", &path)
             .env("MIX_DEPS_PATH", &deps)

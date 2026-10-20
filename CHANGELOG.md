@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- NIFs in the project's own C or C++ code (`c_src/` with `elixir_make`, or any Mix compiler that
+  runs `$(CC)`) are rebuilt for wasm when packing, as the project's own Rust NIFs in `native/`
+  already were. Before, packing failed with "neither a dependency nor has native/".
+
 ## [0.1.5] - 2026-10-20
 
 ### Changed
