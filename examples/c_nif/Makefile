@@ -1,6 +1,10 @@
 # Builds priv/checksum_nif.so from c_src/. elixir_make runs this with MIX_APP_PATH and
 # ERTS_INCLUDE_DIR set; `ampoule release` runs it again with CC pointing at its wasm compiler,
 # which turns the same commands into a wasm archive.
+ifndef MIX_APP_PATH
+$(error run through Mix (elixir_make sets MIX_APP_PATH))
+endif
+
 PRIV = $(MIX_APP_PATH)/priv
 NIF = $(PRIV)/checksum_nif.so
 

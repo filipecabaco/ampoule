@@ -4,7 +4,6 @@
  * links it into the engine. Long inputs run on a dirty CPU scheduler so they do not hold up the
  * VM's normal schedulers. */
 #include <stdint.h>
-#include <string.h>
 
 #include "erl_nif.h"
 
