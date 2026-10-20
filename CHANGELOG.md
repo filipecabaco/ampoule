@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-20
+
 ### Added
 
 - NIFs in the project's own C or C++ code (`c_src/` with `elixir_make`, or any Mix compiler that
@@ -14,6 +16,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   hash of everything the link reads, so packing again with the same NIFs skips the link and gives
   the same binary (examples/c_nif: 13.1 s → 1.3 s; rustler 16.9 s → 4.6 s; sqlite 22.2 s → 10.6 s,
   the rest being SQLite's build). `AMPOULE_NO_CACHE=1` turns it off.
+- Packing for another target finds that target's runtime (`ampoule-<target>` from a release) next
+  to the `ampoule` binary when neither `--stub` nor `AMPOULE_STUBS` names one, so
+  `ampoule release --target x86_64-linux` works after downloading it there.
+- Releases also publish each archive as `ampoule-<target>.tar.gz`, unpacking to `ampoule/`, so
+  `releases/latest/download/ampoule-<target>.tar.gz` always installs the newest version with its
+  NIF kit.
 
 ### Fixed
 
