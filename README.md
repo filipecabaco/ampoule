@@ -65,11 +65,15 @@ TLS connections, give it CA certificates as well, for example
 ### To every platform from one machine
 
 Packing for another platform uses that platform's `ampoule` binary as the base. Each [release](https://github.com/filipecabaco/ampoule/releases)
-publishes them as `ampoule-<target>`. Put them in one directory and pass the targets:
+publishes them as `ampoule-<target>`. Put the one you need next to `ampoule` and name the target:
 
 ```sh
-AMPOULE_STUBS=~/ampoule-stubs ampoule release --target aarch64-darwin --target x86_64-linux
+curl -fLo ~/ampoule/ampoule-x86_64-linux https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-x86_64-linux
+ampoule release --target x86_64-linux
 ```
+
+Or keep them in one directory and point `AMPOULE_STUBS` at it:
+`AMPOULE_STUBS=~/ampoule-stubs ampoule release --target aarch64-darwin --target x86_64-linux`.
 
 The Linux binary for a Docker image can come from a Mac this way, NIFs included.
 
@@ -121,13 +125,17 @@ runs the binary and tests it from the outside:
 
 Download the archive for your machine from the [releases page](https://github.com/filipecabaco/ampoule/releases). There is one for
 `aarch64-darwin`, `x86_64-darwin`, `aarch64-linux` and `x86_64-linux`, each holding `ampoule`, the
-NIF kit (`kit/`) and the license. Keep `kit/` next to `ampoule`.
+NIF kit (`kit/`) and the license. Keep `kit/` next to `ampoule`. `ampoule-<target>.tar.gz` is the
+latest release, unpacking to `ampoule/`:
 
 ```sh
-curl -fsSL https://github.com/filipecabaco/ampoule/releases/download/v0.1.5/ampoule-0.1.5-aarch64-darwin.tar.gz | tar -xz
-export PATH="$PWD/ampoule-0.1.5-aarch64-darwin:$PATH"
+curl -fsSL https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin.tar.gz | tar -xz -C ~
+export PATH="$HOME/ampoule:$PATH"
 ampoule version
 ```
+
+`ampoule-<version>-<target>.tar.gz` is the same archive for one version, unpacking to
+`ampoule-<version>-<target>/`.
 
 If the app has no NIFs, the bare binary is enough:
 `curl -fLo ampoule https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin && chmod +x ampoule`.
@@ -153,7 +161,7 @@ Pack options:
 | `--config FILE` | `./ampoule.toml` if present | see [Configuration](#configuration) |
 | `--out DIR` | `_build/<env>/ampoule` | where binaries are written |
 | `--target T` | the host's | `aarch64-darwin`, `x86_64-darwin`, `aarch64-linux`, `x86_64-linux`; repeatable |
-| `--stub T=FILE` | `$AMPOULE_STUBS/ampoule-T` | the `ampoule` binary built for target `T` |
+| `--stub T=FILE` | `$AMPOULE_STUBS/ampoule-T`, else `ampoule-T` next to `ampoule` | the `ampoule` binary built for target `T` |
 | `--allow-native` | off | drop native code (NIFs) instead of rebuilding it or refusing to pack |
 | `--env ENV` | `$MIX_ENV`, else `prod` | `MIX_ENV` for `release` |
 | `--name NAME` | the only release | which release to build or pack when the project defines several |

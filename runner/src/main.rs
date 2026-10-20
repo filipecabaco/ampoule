@@ -271,9 +271,17 @@ fn stub_for(own: &'static [u8], target: &str, a: &PackArgs) -> Result<&'static [
     }
     let path = match a.stubs.get(target) {
         Some(p) => p.clone(),
-        None => std::env::var_os("AMPOULE_STUBS")
-            .map(|d| PathBuf::from(d).join(format!("ampoule-{target}")))
-            .with_context(|| format!("no runtime for {target}: pass --stub {target}=FILE or set AMPOULE_STUBS to a directory with ampoule-{target}"))?,
+        None => match std::env::var_os("AMPOULE_STUBS") {
+            Some(d) => PathBuf::from(d).join(format!("ampoule-{target}")),
+            // Else next to this executable, where the install puts a downloaded runtime.
+            None => std::env::current_exe()?
+                .parent()
+                .map(|d| d.join(format!("ampoule-{target}")))
+                .filter(|p| p.is_file())
+                .with_context(|| {
+                    format!("no runtime for {target}: put ampoule-{target} from a release next to ampoule, pass --stub {target}=FILE, or set AMPOULE_STUBS to a directory with it")
+                })?,
+        },
     };
     let bytes: &'static [u8] = Box::leak(std::fs::read(&path).with_context(|| format!("runtime for {target}: {}", path.display()))?.into_boxed_slice());
     Ok(pack::split(bytes)?.0)

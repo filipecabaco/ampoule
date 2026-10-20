@@ -1,6 +1,7 @@
 # On a version tag: build ampoule for every target and publish a GitHub release with, per target,
-# a tarball (ampoule, the NIF kit, LICENSE, NOTICE, README.md) and the bare binary (usable as a
-# --stub / AMPOULE_STUBS entry for cross-target packing), plus SHA256SUMS.
+# a tarball (ampoule, the NIF kit, LICENSE, NOTICE, README.md) under a versioned and an unversioned
+# name, and the bare binary (usable as a --stub / AMPOULE_STUBS entry for cross-target packing),
+# plus SHA256SUMS.
 name: release
 
 on:
@@ -55,8 +56,13 @@ jobs:
           cp -R build/engine/kit "dist/$pkg/kit"
           cp LICENSE NOTICE README.md "dist/$pkg/"
           tar -C dist -czf "dist/$pkg.tar.gz" "$pkg"
+          # The same archive under a name without the version, unpacking to ampoule/, so
+          # releases/latest/download/ampoule-<target>.tar.gz always installs the newest.
+          mkdir dist/latest
+          mv "dist/$pkg" dist/latest/ampoule
+          tar -C dist/latest -czf "dist/ampoule-${{ matrix.name }}.tar.gz" ampoule
+          rm -rf dist/latest
           cp "runner/target/${{ matrix.target }}/release/ampoule" "dist/ampoule-${{ matrix.name }}"
-          rm -rf "dist/$pkg"
 
       - name: Check the binary runs
         if: matrix.name != 'x86_64-darwin'
