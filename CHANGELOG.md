@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-20
+
 ### Changed
 
 - Faster. Measured on examples/francis (Apple M5 Pro, against v0.1.4): HTTP throughput +30% with

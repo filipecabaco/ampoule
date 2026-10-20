@@ -44,7 +44,7 @@ running needs nothing.
   shipped in `priv/` are not packed. Unix domain sockets, `File.chmod`, the host pid, a memory alarm
   and restart-on-failure since v0.1.4.
 - One node (no distribution); NIF threads must return rather than call `enif_thread_exit`.
-- Released: v0.1.4 on GitHub Releases, one binary per target.
+- Released: v0.1.5 on GitHub Releases, one binary per target.
 
 ## Brand Commitments
 
