@@ -80,13 +80,21 @@ pub fn natives(paths: &BTreeSet<String>) -> Vec<NativeLib> {
 }
 
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    copy_tree_skipping(from, to, &|_| false)
+}
+
+/// `copy_tree`, leaving out directories whose name `skip` matches, at any depth.
+fn copy_tree_skipping(from: &Path, to: &Path, skip: &dyn Fn(&str) -> bool) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from).with_context(|| format!("reading {}", from.display()))? {
         let entry = entry?;
         let ft = entry.file_type()?;
         let dest = to.join(entry.file_name());
+        if ft.is_dir() && entry.file_name().to_str().is_some_and(skip) {
+            continue;
+        }
         if ft.is_dir() {
-            copy_tree(&entry.path(), &dest)?;
+            copy_tree_skipping(&entry.path(), &dest, skip)?;
         } else if ft.is_symlink() {
             let target = std::fs::read_link(entry.path())?;
             let _ = std::os::unix::fs::symlink(target, &dest);
@@ -108,12 +116,33 @@ pub fn remove_project_copy(project: &Path) {
     let _ = std::fs::remove_dir_all(project_copy(project));
 }
 
-/// Top-level entries of the project left out of the copy its own NIF is built in: what the build
-/// recreates or reads from elsewhere, what it never needs and can be huge (front-end assets and
-/// their node_modules), and files that commonly hold secrets.
+/// Top-level entries of the project left out of the copy its own NIF is built in:
+/// - what the build recreates or reads from elsewhere (`_build`, `deps`, Rust's `target`);
+/// - what it never needs and can be huge: tests, coverage, editor and language-server caches,
+///   front-end assets and their node_modules (Realtime's `.expert` alone is 507 MB);
+/// - tool-version files: mise refuses to run from an untrusted copy, and without them it finds
+///   the project's own configuration one directory up;
+/// - files that commonly hold secrets.
 fn skip_in_copy(name: &str) -> bool {
-    matches!(name, "_build" | "deps" | ".git" | ".elixir_ls" | ".lexical" | ".expert" | "node_modules" | "assets" | ".envrc" | ".netrc")
-        || name.starts_with(".env")
+    matches!(
+        name,
+        "_build"
+            | "deps"
+            | "target"
+            | ".git"
+            | ".elixir_ls"
+            | ".lexical"
+            | ".expert"
+            | "test"
+            | "cover"
+            | "node_modules"
+            | "assets"
+            | "mise.toml"
+            | ".mise.toml"
+            | ".tool-versions"
+            | ".envrc"
+            | ".netrc"
+    ) || name.starts_with(".env")
         || [".pem", ".key", ".p12", ".pfx", ".jks"].iter().any(|ext| name.ends_with(ext))
 }
 
@@ -132,7 +161,8 @@ fn copy_project(from: &Path, to: &Path) -> Result<()> {
         if ft.is_symlink() {
             let _ = std::os::unix::fs::symlink(std::fs::read_link(entry.path())?, &dest);
         } else if ft.is_dir() {
-            copy_tree(&entry.path(), &dest)?;
+            // Build output nested in the project (native/<crate>/target, assets/node_modules).
+            copy_tree_skipping(&entry.path(), &dest, &|n| matches!(n, "target" | "node_modules"))?;
         } else {
             std::fs::copy(entry.path(), &dest)?;
         }
@@ -353,7 +383,9 @@ pub fn build(project: &Path, mix_env: &str, natives: &[NativeLib], tc: &Toolchai
     let bin = work.join("bin");
     let _ = std::fs::remove_dir_all(&work);
     copy_tree(&project.join("deps"), &deps).context("copying deps/ (is this the release's Mix project?)")?;
-    copy_tree(&project.join("_build").join(mix_env), &build)?;
+    // Only lib/: the rest of _build/<env> is earlier releases and packed binaries, which the
+    // build does not read and which can be most of its size.
+    copy_tree(&project.join("_build").join(mix_env).join("lib"), &build.join("lib"))?;
     std::fs::create_dir_all(&bin)?;
     let me = std::env::current_exe()?;
     for name in ["ampoule-cc", "ampoule-c++"] {
@@ -551,7 +583,24 @@ mod tests {
 
     #[test]
     fn the_project_copy_leaves_out_secrets_assets_and_build_output() {
-        for name in ["_build", "deps", ".git", "node_modules", "assets", ".env", ".env.prod", ".envrc", "server.pem", "id.key"] {
+        for name in [
+            "_build",
+            "deps",
+            "target",
+            ".git",
+            ".expert",
+            "test",
+            "cover",
+            "node_modules",
+            "assets",
+            "mise.toml",
+            ".tool-versions",
+            ".env",
+            ".env.prod",
+            ".envrc",
+            "server.pem",
+            "id.key",
+        ] {
             assert!(skip_in_copy(name), "{name} should not be copied");
         }
         for name in ["mix.exs", "mix.lock", "lib", "c_src", "native", "Makefile", "config", "priv", ".formatter.exs"] {
@@ -564,11 +613,14 @@ mod tests {
         let dir = crate::TestDir::new("copy-project");
         let (src, dst) = (dir.0.join("src"), dir.0.join("dst"));
         std::fs::create_dir_all(src.join("c_src")).unwrap();
+        std::fs::create_dir_all(src.join("native/crate/target/debug")).unwrap();
+        std::fs::write(src.join("native/crate/Cargo.toml"), "").unwrap();
         std::fs::write(src.join("mix.exs"), "defmodule M do\n  def project, do: [app: :checksum]\nend\n").unwrap();
         std::fs::write(src.join(".env"), "SECRET=1").unwrap();
         std::os::unix::fs::symlink("/nonexistent/target", src.join(".#mix.exs")).unwrap();
         copy_project(&src, &dst).unwrap();
         assert!(dst.join("mix.exs").is_file() && dst.join("c_src").is_dir() && !dst.join(".env").exists());
+        assert!(dst.join("native/crate/Cargo.toml").is_file() && !dst.join("native/crate/target").exists());
         assert_eq!(std::fs::read_link(dst.join(".#mix.exs")).unwrap(), std::path::Path::new("/nonexistent/target"));
         assert_eq!(project_app(&src).as_deref(), Some("checksum"));
     }
