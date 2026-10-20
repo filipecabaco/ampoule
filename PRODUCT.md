@@ -44,7 +44,7 @@ running needs nothing.
   shipped in `priv/` are not packed. Unix domain sockets, `File.chmod`, the host pid, a memory alarm
   and restart-on-failure since v0.1.4.
 - One node (no distribution); NIF threads must return rather than call `enif_thread_exit`.
-- Released: v0.1.5 on GitHub Releases, one binary per target.
+- Released: v0.1.6 on GitHub Releases, one binary and one archive (with the NIF kit) per target.
 
 ## Brand Commitments
 
@@ -69,9 +69,9 @@ running needs nothing.
   shut it down cleanly in about 1 s.
 - Supabase Realtime, a large production Phoenix app, passed its own end-to-end suite (53/53) when
   packed (`scripts/realtime.exs`, run before the rename).
-- Three examples with end-to-end suites: `examples/phoenix_ecto`, `examples/francis`,
-  `examples/rustler`; 31 tests in all (6, 18 and 7), all passing on 2026-10-20
-  (`scripts/examples.exs`) and in CI on macOS and Linux.
+- Six examples with end-to-end suites: `c_nif`, `francis`, `phoenix_ecto`, `ports`, `rustler`,
+  `sqlite`; 40 tests in all (3, 18, 6, 4, 7, 2), all passing in CI on macOS and Linux on 2026-10-20
+  (`phoenix_ecto` on Linux only).
 - Measured on an Apple M5 Pro (6 performance + 12 efficiency cores, 48 GB, macOS 26.7), 2026-10-20:
   - One CPU-bound job (36 tasks × 50M integer steps) against 1 scheduler: 1.98× at 2, 3.45× at 4,
     4.9× at 6, 6.3× at 8, 8.37× at 12, 10.7× at 18 (11.2× in a second run).
