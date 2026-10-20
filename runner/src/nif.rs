@@ -97,24 +97,56 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Copy the Mix project at `from` to `to` for building its own NIF, without what the build
-/// recreates or reads from elsewhere (`_build`, `deps`) and without version control.
+/// Where the project is copied to build its own NIF (see `copy_project`).
+fn project_copy(project: &Path) -> PathBuf {
+    project.join("_build/ampoule-nif/app")
+}
+
+/// Remove the copy of the project made to build its own NIF. It sits under _build, which CI
+/// often caches, so it does not outlive the pack.
+pub fn remove_project_copy(project: &Path) {
+    let _ = std::fs::remove_dir_all(project_copy(project));
+}
+
+/// Top-level entries of the project left out of the copy its own NIF is built in: what the build
+/// recreates or reads from elsewhere, what it never needs and can be huge (front-end assets and
+/// their node_modules), and files that commonly hold secrets.
+fn skip_in_copy(name: &str) -> bool {
+    matches!(name, "_build" | "deps" | ".git" | ".elixir_ls" | ".lexical" | ".expert" | "node_modules" | "assets" | ".envrc" | ".netrc")
+        || name.starts_with(".env")
+        || [".pem", ".key", ".p12", ".pfx", ".jks"].iter().any(|ext| name.ends_with(ext))
+}
+
+/// Copy the Mix project at `from` to `to` for building its own NIF (see `skip_in_copy`).
+/// Symlinks are recreated, not followed, as in `copy_tree`.
 fn copy_project(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from).with_context(|| format!("reading {}", from.display()))? {
         let entry = entry?;
         let name = entry.file_name();
-        if matches!(name.to_str(), Some("_build" | "deps" | ".git" | ".elixir_ls")) {
+        if name.to_str().is_none_or(skip_in_copy) {
             continue;
         }
         let dest = to.join(&name);
-        if entry.file_type()?.is_dir() {
+        let ft = entry.file_type()?;
+        if ft.is_symlink() {
+            let _ = std::os::unix::fs::symlink(std::fs::read_link(entry.path())?, &dest);
+        } else if ft.is_dir() {
             copy_tree(&entry.path(), &dest)?;
         } else {
             std::fs::copy(entry.path(), &dest)?;
         }
     }
     Ok(())
+}
+
+/// The OTP application the Mix project at `project` defines (`app: :name` in its mix.exs), if
+/// one can be read.
+fn project_app(project: &Path) -> Option<String> {
+    let src = std::fs::read_to_string(project.join("mix.exs")).ok()?;
+    let at = src.find("app: :")? + "app: :".len();
+    let name: String = src[at..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+    (!name.is_empty()).then_some(name)
 }
 
 /// Remove host build products from a dependency so nothing compiled for the host is reused.
@@ -349,8 +381,13 @@ pub fn build(project: &Path, mix_env: &str, natives: &[NativeLib], tc: &Toolchai
         // A NIF of the project's own app is built from a copy of the project: Rust from its
         // native/, C and C++ by its own compilers (elixir_make and a Makefile over c_src/, say).
         let own = !deps.join(app).is_dir();
+        if own && project_app(project).as_deref() != Some(app) {
+            // Neither under deps/ nor the project's own app: a path dependency, whose project is
+            // elsewhere. Building it from a copy of this project would build the wrong thing.
+            bail!("{app} has a native library ({}), but it is neither the project's own app nor under deps/ (a path dependency?); NIFs in path dependencies are not supported yet", lib.rel_path);
+        }
         let dep_dir = if own {
-            let dir = work.join("app").join(app);
+            let dir = project_copy(project).join(app);
             copy_project(project, &dir)?;
             dir
         } else {
@@ -501,7 +538,7 @@ pub fn precompile(wasm: &[u8], target: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::check_llvm;
+    use super::{check_llvm, copy_project, project_app, skip_in_copy};
 
     #[test]
     fn a_bitcode_kit_links_only_with_its_own_llvm() {
@@ -510,5 +547,29 @@ mod tests {
         assert!(check_llvm(Some("23.1.0"), None).is_err());
         // Kits from before LTO name no LLVM and link with any.
         assert!(check_llvm(None, Some("22.1.0")).is_ok());
+    }
+
+    #[test]
+    fn the_project_copy_leaves_out_secrets_assets_and_build_output() {
+        for name in ["_build", "deps", ".git", "node_modules", "assets", ".env", ".env.prod", ".envrc", "server.pem", "id.key"] {
+            assert!(skip_in_copy(name), "{name} should not be copied");
+        }
+        for name in ["mix.exs", "mix.lock", "lib", "c_src", "native", "Makefile", "config", "priv", ".formatter.exs"] {
+            assert!(!skip_in_copy(name), "{name} should be copied");
+        }
+    }
+
+    #[test]
+    fn the_project_copy_recreates_symlinks_instead_of_following_them() {
+        let dir = crate::TestDir::new("copy-project");
+        let (src, dst) = (dir.0.join("src"), dir.0.join("dst"));
+        std::fs::create_dir_all(src.join("c_src")).unwrap();
+        std::fs::write(src.join("mix.exs"), "defmodule M do\n  def project, do: [app: :checksum]\nend\n").unwrap();
+        std::fs::write(src.join(".env"), "SECRET=1").unwrap();
+        std::os::unix::fs::symlink("/nonexistent/target", src.join(".#mix.exs")).unwrap();
+        copy_project(&src, &dst).unwrap();
+        assert!(dst.join("mix.exs").is_file() && dst.join("c_src").is_dir() && !dst.join(".env").exists());
+        assert_eq!(std::fs::read_link(dst.join(".#mix.exs")).unwrap(), std::path::Path::new("/nonexistent/target"));
+        assert_eq!(project_app(&src).as_deref(), Some("checksum"));
     }
 }
