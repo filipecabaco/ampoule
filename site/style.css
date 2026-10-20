@@ -230,12 +230,13 @@ p, ul, ol { margin: 0; }
   font-size: clamp(3.5rem, 5.4vw, 5.25rem);
   font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.03em;
-  padding-bottom: 0.1em;
-  transition: background-color 0.4s var(--ease), transform 0.4s var(--ease);
+  /* A single digit takes no letter-spacing (it would narrow the box and push the digit right), and this
+     nudge puts its ink on the circle's centre: measured on renders, not by eye. */
+  padding-bottom: 0.13em;
+  transition: background-color 0.4s var(--ease), color 0.4s var(--ease);
 }
 
-.step.is-done .step-no { background: var(--wasm); border-color: var(--wasm); color: var(--paper); transform: rotate(-8deg); }
+.step.is-done .step-no { background: var(--wasm); border-color: var(--wasm); color: var(--paper); }
 
 .picto {
   grid-column: 1;
@@ -336,6 +337,8 @@ p, ul, ol { margin: 0; }
   padding: 0.85rem 1rem;
   font-size: 0.82rem;
   line-height: 1.7;
+  /* Commands and output are shown as a terminal prints them: `==>` stays three characters. */
+  font-variant-ligatures: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow-x: auto;
@@ -520,6 +523,31 @@ p, ul, ol { margin: 0; }
 .specs td.text { font-size: 1rem; font-weight: 600; white-space: normal; }
 .specs .aside { display: block; font-size: 0.85rem; font-weight: 500; color: var(--ink-soft); }
 
+/* Test report: the bench rig, a scaling chart drawn like the rest of the sheet, then the
+   measurements in the specification table's form. The measured line is the one blue mark. */
+
+.rig { max-width: 62ch; margin-bottom: 1.5rem; color: var(--ink-soft); font-weight: 500; }
+
+.scaling { max-width: 46rem; margin: 0 0 clamp(2rem, 4vw, 3rem); }
+.scaling svg { display: block; width: 100%; height: auto; overflow: visible; }
+.scaling figcaption { max-width: 62ch; margin-top: 0.75rem; font-size: 0.92rem; color: var(--ink-soft); }
+
+.scaling .grid path { fill: none; stroke: #e4e4e6; stroke-width: 1; }
+.scaling .axis path { fill: none; stroke: var(--ink); stroke-width: var(--hair); }
+.scaling text { font: 600 13px var(--sans); fill: var(--ink-soft); text-anchor: middle; font-variant-numeric: tabular-nums; }
+.scaling text.y { text-anchor: end; }
+.scaling text.title { font-weight: 500; }
+.scaling text.end { text-anchor: end; }
+.scaling .cores { fill: none; stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 4; }
+.scaling .cores-label { text-anchor: start; font-weight: 500; }
+.scaling .cores-label.end { text-anchor: end; }
+.scaling .ideal { fill: none; stroke: var(--ink); stroke-width: var(--hair); stroke-dasharray: 6 6; stroke-linecap: round; }
+.scaling .ideal-label { text-anchor: end; font-weight: 500; }
+.scaling .measured { fill: none; stroke: var(--wasm); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.scaling .points circle { fill: var(--wasm); stroke: var(--paper); stroke-width: 2; }
+.scaling .points circle:hover { r: 7; }
+.scaling .end-label { font: 700 22px var(--sans); fill: var(--ink); }
+
 /* Back cover. */
 
 .back { padding: clamp(3rem, 6vw, 5rem) var(--gutter) 2rem; display: grid; gap: 3rem; }
@@ -589,6 +617,12 @@ p, ul, ol { margin: 0; }
   .back-install { grid-column: 1; }
 
   .specimen .cmd { padding: 1rem; font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  /* The chart scales as a whole; its labels grow in chart units so they still print at about 12px. */
+  .scaling text { font-size: 28px; }
+  .scaling .cores-label, .scaling .ideal-label { font-size: 24px; }
+  .scaling .end-label { font-size: 40px; }
+  .scaling .long { display: none; }
   .file { grid-template-columns: 1fr; }
 }
 
