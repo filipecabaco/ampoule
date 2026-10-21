@@ -40,8 +40,16 @@ TLS record goes through.
 The emulator is built with link-time optimisation: `-flto` goes to `make` (not to configure's
 `CFLAGS`, where OpenSSL's link probe would fail as bitcode) and `--lto-O3` to the link. The kit's
 objects are therefore LLVM bitcode, and `kit.json` records the LLVM version that can link them.
-`runner/src/engine.rs` (`for_target`) holds the CPU features each target's precompiled engine may
-assume.
+`runner/src/engine_target.rs` (`for_target`) holds the CPU features each target's precompiled
+engine may assume.
+
+The runner builds two ways. By default it has the `compiler` feature (Cranelift): it packs, and it
+precompiles engines relinked with NIFs. `cargo build --release --no-default-features` is the lean
+runtime, about 8 MiB smaller, which only loads precompiled engines: releases ship it as
+`ampoule-<target>`, and packing starts apps from it when it sits next to `ampoule`. Precompiled
+code loads into either, since `engine.rs`, the configuration both share with `build.rs`, sets
+nothing Cranelift-specific. CI lints and builds both, and runs the smoke test and the examples on
+the lean runtime.
 
 To change ERTS, unpack OTP somewhere, apply the patch, make the change, and write the patch back with
 `git diff` (or `diff -ru`) from the OTP root. `engine/ampoule-os/include/ampoule_os.h` is
@@ -114,6 +122,7 @@ and `SHA256SUMS`.
 | `config.rs` | `ampoule.toml` and the embedded manifest |
 | `dist.rs` | Erlang distribution: node name, cookie, epmd or a fixed port, and the `remote`/`rpc` client |
 | `engine.rs` | wasmtime configuration, shared with `build.rs` |
+| `engine_target.rs` | Cranelift settings for precompiling the engine for a target (`build.rs`, and NIF engines with the `compiler` feature) |
 | `kernel.rs` | fd table, mount table, path resolution |
 | `wasi.rs` | `wasi_snapshot_preview1` |
 | `net.rs` | the `ampoule_os` module: BSD sockets, pipes, `dup`, signal registration |

@@ -27,6 +27,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Packed binaries are about 11 MiB smaller (examples/francis: 24.6 MiB in 0.1.6, 13.4 MiB now).
+  They start from the lean runtime, `ampoule` built without the Cranelift compiler, which a packed
+  app never uses (8.4 MiB): releases ship it next to `ampoule` in the archive and as the bare
+  `ampoule-<target>`, and packing uses it when it sits next to `ampoule`, refusing one from another
+  release. The runtime is also stripped of symbols (2.8 MiB).
 - The app sees `/tmp/.ampoule`, the runtime's own files (the sys.config overlay, the source of
   `/etc/hosts`, extracted `priv/` programs), read-only.
 - `vm.args` flags `-name`, `-sname` and `-setcookie` are still left out with a warning, which no

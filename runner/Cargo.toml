@@ -12,6 +12,13 @@ description = "Package an Erlang/Elixir release as one binary: the BEAM compiled
 name = "ampoule"
 path = "src/main.rs"
 
+[features]
+# Compiling wasm: precompiling engines relinked with NIFs when packing, and AMPOULE_ENGINE. A
+# build without it (`--no-default-features`) only runs precompiled engines: the base the release
+# packs apps on, smaller by Cranelift.
+default = ["compiler"]
+compiler = ["wasmtime/cranelift", "wasmtime/all-arch", "wasmtime/parallel-compilation"]
+
 [dependencies]
 anyhow = "1"
 libc = "0.2"
@@ -20,7 +27,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 toml = "1"
-wasmtime = { version = "49", default-features = false, features = ["anyhow", "cranelift", "all-arch", "gc", "gc-drc", "threads", "parallel-compilation", "std", "runtime", "addr2line", "demangle"] }
+wasmtime = { version = "49", default-features = false, features = ["anyhow", "gc", "gc-drc", "threads", "std", "runtime", "addr2line", "demangle"] }
 zstd = "0.14"
 
 [build-dependencies]
@@ -32,3 +39,6 @@ lto = "thin"
 codegen-units = 1
 # A panic in a host function must take the whole VM down rather than leave a scheduler missing.
 panic = "abort"
+# Symbols only name runtime frames in a native crash; dropping them takes about 2.8 MiB off every
+# packed binary. Guest (Erlang) stack traces are unaffected.
+strip = "symbols"

@@ -1,7 +1,7 @@
 # On a version tag: build ampoule for every target and publish a GitHub release with, per target,
-# a tarball (ampoule, the NIF kit, LICENSE, NOTICE, README.md) under a versioned and an unversioned
-# name, and the bare binary (usable as a --stub / AMPOULE_STUBS entry for cross-target packing),
-# plus SHA256SUMS.
+# a tarball (ampoule, the lean runtime, the NIF kit, LICENSE, NOTICE, README.md) under a versioned
+# and an unversioned name, and the bare lean runtime (built without Cranelift: what packed apps
+# start from, also for cross-target packing), plus SHA256SUMS.
 name: release
 
 on:
@@ -45,7 +45,9 @@ jobs:
 
       - name: Build
         working-directory: runner
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }}
+          cargo build --release --locked --no-default-features --target ${{ matrix.target }} --target-dir target/lean
 
       - name: Package
         run: |
@@ -53,6 +55,8 @@ jobs:
           pkg="ampoule-${version}-${{ matrix.name }}"
           mkdir -p "dist/$pkg"
           cp "runner/target/${{ matrix.target }}/release/ampoule" "dist/$pkg/"
+          # The lean runtime (no Cranelift), next to ampoule: packed apps start from it.
+          cp "runner/target/lean/${{ matrix.target }}/release/ampoule" "dist/$pkg/ampoule-${{ matrix.name }}"
           cp -R build/engine/kit "dist/$pkg/kit"
           cp LICENSE NOTICE README.md "dist/$pkg/"
           tar -C dist -czf "dist/$pkg.tar.gz" "$pkg"
@@ -62,7 +66,7 @@ jobs:
           mv "dist/$pkg" dist/latest/ampoule
           tar -C dist/latest -czf "dist/ampoule-${{ matrix.name }}.tar.gz" ampoule
           rm -rf dist/latest
-          cp "runner/target/${{ matrix.target }}/release/ampoule" "dist/ampoule-${{ matrix.name }}"
+          cp "runner/target/lean/${{ matrix.target }}/release/ampoule" "dist/ampoule-${{ matrix.name }}"
 
       - name: Check the binary runs
         if: matrix.name != 'x86_64-darwin'

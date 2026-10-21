@@ -12,7 +12,7 @@ $ cd my_app
 $ ampoule release
 ==> MIX_ENV=prod mix release --overwrite
 ==> my_app 0.1.0: 1018 files, 11.6 MiB → 5.2 MiB image (32 paths pruned)
-_build/prod/ampoule/my_app-aarch64-darwin (26.3 MiB)
+_build/prod/ampoule/my_app-aarch64-darwin (13.4 MiB)
 ==> packed in 0.3s; run `<binary> help` for its commands
 
 $ _build/prod/ampoule/my_app-aarch64-darwin start
@@ -101,9 +101,9 @@ An app with NIFs gets them rebuilt for wasm during `ampoule release`, from C, C+
 The output shows each one:
 
 ```console
-==> building eiconv for wasm (priv/eiconv_nif.so)
-==> linking the engine with 1 NIF(s): eiconv_nif
-_build/prod/ampoule/my_app-aarch64-darwin (35.5 MiB)
+==> building checksum for wasm (priv/checksum_nif.so)
+==> linking the engine with 1 NIF(s): checksum_nif
+_build/prod/ampoule/checksum-aarch64-darwin (17.0 MiB)
 ```
 
 This needs wasi-sdk on the packing machine (see [NIFs](#nifs)). The machine that runs the binary
@@ -126,7 +126,8 @@ runs the binary and tests it from the outside:
 
 Download the archive for your machine from the [releases page](https://github.com/filipecabaco/ampoule/releases). There is one for
 `aarch64-darwin`, `x86_64-darwin`, `aarch64-linux` and `x86_64-linux`, each holding `ampoule`, the
-NIF kit (`kit/`) and the license. Keep `kit/` next to `ampoule`. `ampoule-<target>.tar.gz` is the
+lean runtime `ampoule-<target>`, the NIF kit (`kit/`) and the license. Keep `kit/` and the lean
+runtime next to `ampoule`. `ampoule-<target>.tar.gz` is the
 latest release, unpacking to `ampoule/`:
 
 ```sh
@@ -138,7 +139,11 @@ ampoule version
 `ampoule-<version>-<target>.tar.gz` is the same archive for one version, unpacking to
 `ampoule-<version>-<target>/`.
 
-If the app has no NIFs, the bare binary is enough:
+Packed apps start from the lean runtime: `ampoule` without the Cranelift compiler, which a packed
+app never needs (its engine is precompiled), so every binary is about 8 MiB smaller
+(examples/francis: 13.4 MiB instead of 21.8). When it is not next to `ampoule`, packing starts from
+`ampoule` itself, and it refuses a lean runtime from another release. The bare `ampoule-<target>` on
+the releases page is that runtime; on its own it packs apps without NIFs:
 `curl -fLo ampoule https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin && chmod +x ampoule`.
 
 Packing needs Elixir and Erlang/OTP 28 on the packing machine, since `ampoule release` runs

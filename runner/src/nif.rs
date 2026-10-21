@@ -623,6 +623,7 @@ pub fn link_engine(tc: &Toolchain, nifs: &[BuiltNif], work: &Path) -> Result<Vec
 }
 
 /// Rust target triple of an ampoule target name, for precompiling.
+#[cfg(feature = "compiler")]
 fn triple(target: &str) -> Result<&'static str> {
     Ok(match target {
         "aarch64-darwin" => "aarch64-apple-darwin",
@@ -634,11 +635,17 @@ fn triple(target: &str) -> Result<&'static str> {
 }
 
 /// beam.wasm compiled to native code for `target`, compressed as the runtime expects.
+#[cfg(feature = "compiler")]
 pub fn precompile(wasm: &[u8], target: &str) -> Result<Vec<u8>> {
-    let cfg = crate::engine::for_target(triple(target)?)?;
+    let cfg = crate::engine_target::for_target(triple(target)?)?;
     let engine = wasmtime::Engine::new(&cfg)?;
     let native = engine.precompile_module(wasm).map_err(|e| anyhow::anyhow!("precompiling the engine for {target}: {e:?}"))?;
     Ok(zstd::bulk::compress(&native, 9)?)
+}
+
+#[cfg(not(feature = "compiler"))]
+pub fn precompile(_wasm: &[u8], target: &str) -> Result<Vec<u8>> {
+    bail!("this ampoule cannot precompile an engine with NIFs for {target}: it was built without the `compiler` feature; pack with a release's `ampoule`")
 }
 
 #[cfg(test)]

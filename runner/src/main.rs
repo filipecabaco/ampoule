@@ -11,6 +11,8 @@ mod cache;
 mod config;
 mod dist;
 mod engine;
+#[cfg(feature = "compiler")]
+mod engine_target;
 mod errno;
 mod fds;
 mod hostfs;
@@ -267,25 +269,37 @@ fn load_config(path: Option<&Path>) -> Result<Config> {
     }
 }
 
+/// Marks this runtime's build. Packing only builds on a runtime with the same mark: one from
+/// another ampoule version could not load the engine precompiled for it.
+#[used]
+static RUNTIME_ID: &[u8] = concat!("\0ampoule runtime ", env!("CARGO_PKG_VERSION"), " erts ", env!("AMPOULE_ERTS_VSN"), "\0").as_bytes();
+
+fn same_runtime(stub: &[u8]) -> bool {
+    stub.windows(RUNTIME_ID.len()).any(|w| w == RUNTIME_ID)
+}
+
+/// The runtime packed apps for `target` start from: `--stub`, else `ampoule-<target>` from a
+/// release next to this executable (the lean runtime, without Cranelift), else `$AMPOULE_STUBS`
+/// for other targets. For this machine's own target, this executable when there is none.
 fn stub_for(own: &'static [u8], target: &str, a: &PackArgs) -> Result<&'static [u8]> {
-    if target == TARGET && !a.stubs.contains_key(target) {
-        return Ok(own);
-    }
-    let path = match a.stubs.get(target) {
-        Some(p) => p.clone(),
-        None => match std::env::var_os("AMPOULE_STUBS") {
+    let beside = std::env::current_exe()?.parent().map(|d| d.join(format!("ampoule-{target}"))).filter(|p| p.is_file());
+    let path = match (a.stubs.get(target), beside) {
+        (Some(p), _) => p.clone(),
+        (None, beside) if target == TARGET => match beside {
+            Some(p) => p,
+            None => return Ok(own),
+        },
+        (None, beside) => match std::env::var_os("AMPOULE_STUBS") {
             Some(d) => PathBuf::from(d).join(format!("ampoule-{target}")),
-            // Else next to this executable, where the install puts a downloaded runtime.
-            None => std::env::current_exe()?
-                .parent()
-                .map(|d| d.join(format!("ampoule-{target}")))
-                .filter(|p| p.is_file())
-                .with_context(|| {
-                    format!("no runtime for {target}: put ampoule-{target} from a release next to ampoule, pass --stub {target}=FILE, or set AMPOULE_STUBS to a directory with it")
-                })?,
+            None => beside.with_context(|| {
+                format!("no runtime for {target}: put ampoule-{target} from a release next to ampoule, pass --stub {target}=FILE, or set AMPOULE_STUBS to a directory with it")
+            })?,
         },
     };
     let bytes: &'static [u8] = Box::leak(std::fs::read(&path).with_context(|| format!("runtime for {target}: {}", path.display()))?.into_boxed_slice());
+    if !same_runtime(bytes) {
+        bail!("{} is not the runtime of this ampoule ({VERSION}, ERTS {ERTS_VSN}): use ampoule-{target} from the same release", path.display());
+    }
     Ok(pack::split(bytes)?.0)
 }
 
@@ -804,7 +818,10 @@ fn info(app: &App) -> Result<()> {
 fn load_engine(engine: &Engine, packed: Option<&'static [u8]>) -> Result<Module> {
     if let Some(path) = std::env::var_os("AMPOULE_ENGINE") {
         let path = PathBuf::from(path);
+        #[cfg(feature = "compiler")]
         return Module::from_file(engine, &path).map_err(|e| anyhow::anyhow!("compiling {}: {e:?}", path.display()));
+        #[cfg(not(feature = "compiler"))]
+        anyhow::bail!("AMPOULE_ENGINE={}: this ampoule runs only precompiled engines (built without the `compiler` feature)", path.display());
     }
     let native = zstd::bulk::decompress(packed.unwrap_or(ENGINE), 512 << 20)?;
     // SAFETY: these bytes come from this binary (build.rs) or its own payload (nif::precompile),
@@ -1177,6 +1194,18 @@ impl Drop for TestDir {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_runtime_is_recognised_by_its_mark() {
+        let mut stub = b"\x7fELF some code".to_vec();
+        assert!(!same_runtime(&stub));
+        stub.extend_from_slice(RUNTIME_ID);
+        stub.extend_from_slice(b"more");
+        assert!(same_runtime(&stub));
+        // Another version's mark is not this one.
+        let other = String::from_utf8_lossy(RUNTIME_ID).replace(VERSION, "0.0.0");
+        assert!(!same_runtime(other.as_bytes()));
+    }
 
     #[test]
     fn parse_size_understands_suffixes() {
