@@ -48,6 +48,17 @@ To change ERTS, unpack OTP somewhere, apply the patch, make the change, and writ
 force-included into every ERTS and NIF compile. It maps the POSIX calls wasi-libc lacks onto the
 `ampoule_os` imports that `runner/src/net.rs` implements.
 
+ERTS gets its carriers (`erl_mseg`) from `aos_pages_alloc` in `engine/ampoule-os/src/aos.c`, not
+from wasi-libc's emulated `mmap`, which mallocs and cannot unmap part of a mapping: the patch
+points `os_mmap`/`os_munmap` in `erl_mmap.c` at it. It hands out whole wasm pages, tracked in three
+bitmaps (pages it grew the memory by, pages in use, free pages still resident), and reuses freed
+ranges first-fit, resident ones first. Up to 32 MiB of freed pages stay resident; past that,
+freeing a range calls the `discard` import (`runner/src/mem.rs`), which drops the pages on the
+host: `madvise(MADV_DONTNEED)` on Linux, a fresh `MAP_FIXED` anonymous mapping over them on macOS,
+where `MADV_DONTNEED` leaves them resident. The runtime turns ERTS's per-scheduler segment cache off
+(`-MMmcs 0`, in `main.rs`); for an app that turns it back on, the patch has `erl_mseg.c` empty the
+cache and retry when the memory limit is reached.
+
 The runner's `build.rs` precompiles `build/engine/beam.wasm` (or `AMPOULE_BEAM`) for the target
 and embeds it in the binary.
 
@@ -61,7 +72,7 @@ engine comes back from the cache.
 | | What it checks |
 |---|---|
 | `cargo test` | the runtime's pure logic: paths and mounts, network policy, config, `.beam` stripping, the payload format |
-| `scripts/smoke.exs` | packs `test/fixture` (a C NIF) and checks the binary from inside (filesystem, `/proc`, NIF, TCP, TLS) and outside (serving, SIGTERM) |
+| `scripts/smoke.exs` | packs `test/fixture` (a C NIF) and checks the binary from inside (filesystem, `/proc`, NIF, TCP, TLS) and outside (RSS falling after a memory spike, serving, SIGTERM) |
 | `scripts/examples.exs` | each example's `test/e2e` suite against its packed binary |
 | `scripts/realtime.exs` | Realtime's own e2e suite against a packed Realtime (`test/realtime/ampoule.toml`); run by hand |
 
@@ -116,5 +127,5 @@ and `SHA256SUMS`.
 | `threads.rs` | `wasi.thread-spawn` and the main thread |
 | `proc.rs` | the generated `/proc` |
 | `vfs.rs` | the embedded rootfs reader |
-| `mem.rs` | access to the shared linear memory |
+| `mem.rs` | access to the shared linear memory, and handing freed pages back to the host |
 | `errno.rs` | WASI errno codes and host errno translation |

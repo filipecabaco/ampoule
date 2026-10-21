@@ -47,6 +47,8 @@ defmodule Smoke do
       assert(out =~ "smoke checks: ok", "a check failed")
     end)
 
+    step("memory freed after a spike goes back to the host", fn -> spike(app, work) end)
+
     step("serves TCP and stops cleanly on SIGTERM", fn -> serve_and_stop(app, work) end)
 
     unless opts[:keep], do: File.rm_rf!(work)
@@ -82,6 +84,59 @@ defmodule Smoke do
     assert(status == 0, "exit status #{status} after SIGTERM:\n#{out}")
     assert(out =~ "smoke: stopping cleanly", "the release did not stop through init:stop():\n#{out}")
     assert(not File.exists?(guest_tmp), "private /tmp #{guest_tmp} left behind")
+  end
+
+  # Smoke.Spike holds 512 MiB of binaries, then frees them. The process's RSS, read from outside,
+  # must give back at least 90% of that within 20 seconds. Before, it stayed near its peak until
+  # the VM stopped (macOS alone reclaimed about 75% of a 512 MiB spike, and none of 1 GiB).
+  @spike_mib 512
+  defp spike(app, work) do
+    port =
+      Port.open({:spawn_executable, "/bin/sh"}, [
+        :exit_status,
+        {:line, 4096},
+        args: ["-c", "echo $$; exec \"$0\" eval \"$1\" 2>&1", app, "Smoke.Spike.run(#{@spike_mib}, 30_000)"],
+        cd: work
+      ])
+
+    pid = receive do: ({^port, {:data, {:eol, line}}} -> to_string(line))
+    await_line(port, "spike: peak")
+    peak = rss_mib(pid)
+    await_line(port, "spike: freed")
+    target = peak - div(@spike_mib * 9, 10)
+    after_free = poll_rss(pid, target, 40)
+    System.cmd("kill", ["-TERM", pid])
+    receive do: ({^port, {:exit_status, _}} -> :ok), after: (35_000 -> fail("the spike still running 35s after SIGTERM"))
+    IO.puts("RSS #{peak} MiB at the peak, #{after_free} MiB after freeing")
+    assert(after_free <= target, "RSS still #{after_free} MiB 20s after freeing #{@spike_mib} MiB (peak #{peak} MiB)")
+  end
+
+  defp await_line(port, prefix) do
+    receive do
+      {^port, {:data, {:eol, line}}} ->
+        if String.starts_with?(to_string(line), prefix), do: :ok, else: await_line(port, prefix)
+
+      {^port, {:exit_status, s}} ->
+        fail("the spike exited with status #{s} before #{inspect(prefix)}")
+    after
+      60_000 -> fail("no #{inspect(prefix)} from the spike within 60s")
+    end
+  end
+
+  defp poll_rss(pid, target, tries) do
+    rss = rss_mib(pid)
+
+    if rss <= target or tries == 0 do
+      rss
+    else
+      Process.sleep(500)
+      poll_rss(pid, target, tries - 1)
+    end
+  end
+
+  defp rss_mib(pid) do
+    {out, 0} = System.cmd("ps", ["-o", "rss=", "-p", pid])
+    out |> String.trim() |> String.to_integer() |> div(1024)
   end
 
   defp connect(_port, 0), do: fail("the app never accepted connections")

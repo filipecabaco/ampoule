@@ -33,6 +33,18 @@ and versions follow [Semantic Versioning](https://semver.org/).
   longer shows the cookie; `-hidden`, `-proto_dist`, `-epmd_module` and `-dist_listen` apply when
   the node is distributed, and `-erl_epmd_port` sets its port.
 
+### Fixed
+
+- Memory the VM freed never went back to the host: after a spike the process's RSS stayed at its
+  peak until the VM stopped, since wasm memory cannot shrink and wasi-libc's `malloc` keeps what it
+  frees. ERTS's carriers now come from an allocator of whole wasm pages in the engine
+  (`engine/ampoule-os`), and the pages of a carrier ERTS releases are dropped on the host
+  (`madvise(MADV_DONTNEED)` on Linux, a fresh mapping on macOS) and reused for later carriers. After
+  holding and freeing 1 GiB of binaries, RSS goes back to about 115 MiB (idle: 94 MiB), where it
+  stayed at about 1.1 GiB, three spikes in a row (Apple M5 Pro). Carriers come from `erl_mseg`
+  again, so the `-M<A>mmmbc 0 -M<A>mmsbc 0` defaults from 0.1.1 are gone; the VM's address space
+  still stays at the size a spike reached, counted against `--memory-max`.
+
 ## [0.1.6] - 2026-10-20
 
 ### Added

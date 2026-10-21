@@ -813,13 +813,13 @@ fn load_engine(engine: &Engine, packed: Option<&'static [u8]>) -> Result<Module>
     unsafe { Module::deserialize(engine, &native) }.map_err(|e| anyhow::anyhow!("loading the engine: {e:?}"))
 }
 
-/// Allocators whose carriers come from `malloc` instead of `erl_mseg` (`-M<A>mmmbc 0 -M<A>mmsbc 0`).
-/// wasi-libc's emulated `munmap` frees only the exact range `mmap` returned, but ERTS maps
-/// `size + alignment` and unmaps the unaligned head and tail, then the aligned interior: those
-/// calls fail, ERTS ignores the error, and every freed mseg carrier stays in linear memory, which
-/// never shrinks. An idle Realtime grew by about 19 MB a minute; with this it stays flat and starts
-/// about 100 MB smaller. A release's vm.args can still set these.
-const CARRIERS_FROM_MALLOC: [&str; 10] = ["B", "D", "E", "F", "H", "I", "L", "R", "S", "T"];
+/// ERTS keeps up to 10 freed memory segments per scheduler for reuse (`+MMmcs`). Each is held by
+/// one allocator instance, and with the memory capped (`--memory-max`, or wasm32's 4 GiB) they
+/// make allocations fail that the free memory would serve: a 1 GiB spike repeated under a 1.6 GiB
+/// cap ran out of memory with them and not without. The engine's segment allocator keeps up to
+/// 32 MiB of freed pages warm instead, shared and always reusable (engine/ampoule-os/src/aos.c).
+/// A release's vm.args can still set it.
+const NO_SEGMENT_CACHE: [&str; 2] = ["-MMmcs", "0"];
 
 /// A file of the release by its guest path (an `-args_file`), or None if the release has no such
 /// file. Only files inside the release can be read before the VM starts.
@@ -1083,7 +1083,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
     let s = format!("{cores}:{cores}");
     let mut argv: Vec<String> = ["beam", "-S", &s, "-SDcpu", &s].map(String::from).to_vec();
-    argv.extend(CARRIERS_FROM_MALLOC.iter().flat_map(|a| [format!("-M{a}mmmbc"), "0".into(), format!("-M{a}mmsbc"), "0".into()]));
+    argv.extend(NO_SEGMENT_CACHE.map(String::from));
     vmargs::resolve_schedulers(&mut vm.emu, cores);
     argv.extend(vm.emu);
     if let Some(n) = o.schedulers {
@@ -1136,6 +1136,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     net::add(&mut linker)?;
     spawn::add(&mut linker)?;
     wasi::add_ampoule_os(&mut linker)?;
+    mem::add(&mut linker)?;
     threads::add(&mut linker)?;
     let store = Store::new(&engine, Ctx { k: kernel.clone() });
     linker.define(&store, "env", "memory", memory)?;

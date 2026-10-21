@@ -378,6 +378,12 @@ unsigned aos_path_mode(const char *path, int follow);
 /* WASI has no chmod; these set the mode on the host file (src/aos.c). */
 int aos_chmod(const char *path, mode_t mode);
 int aos_fchmod(int fd, mode_t mode);
+/* Memory segments for ERTS's carriers (erl_mmap.c's os_mmap and os_munmap; src/aos.c): whole
+ * wasm pages of linear memory, aligned to `align` (a power of two). Any page range of a segment
+ * can be freed; its pages are reused for later segments and, beyond a small reserve kept
+ * resident, handed back to the host. Not zeroed. NULL / -1 with errno set on failure. */
+void *aos_pages_alloc(size_t size, size_t align);
+int aos_pages_free(void *addr, size_t size);
 static inline int aos_getrlimit(int res, struct rlimit *r) {
     if (res != RLIMIT_NOFILE) { errno = EINVAL; return -1; }
     r->rlim_cur = r->rlim_max = 4096;

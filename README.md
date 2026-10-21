@@ -354,9 +354,17 @@ ampoule: VM failed (status 1); restarting in 1s (1 of 5 in 5m)
 ```
 
 Usable memory is less than the limit: thread stacks and allocator overhead live in the same memory,
-more of it with more schedulers. The VM's memory also never shrinks once grown, so a spike stays
-reserved until the VM restarts. To kill a runaway process rather than the VM, cap process heaps with
+more of it with more schedulers. To kill a runaway process rather than the VM, cap process heaps with
 `+hmax` (and `+hmaxib true` to count binaries) in `vm_args`.
+
+**After a spike.** Memory the VM frees goes back to the host, so the process's RSS falls again
+once a spike is over: when ERTS releases a carrier, the runtime drops its pages, keeping at most
+32 MiB of them resident for the next carriers to reuse. ERTS's own cache of freed carriers is off
+(`+MMmcs 0`): it holds them per scheduler, where under a memory cap they make allocations fail that
+the free memory would serve; setting `+MMmcs` in `vm_args` turns it back on. What stays is the VM's
+address space: wasm memory cannot shrink, so the range a spike reached remains the VM's, reused for
+its later allocations without taking host memory, and `--memory-max` still caps it. Memory from
+`malloc` (NIFs, OpenSSL, thread stacks) is reused by the VM but not returned.
 
 ### Distribution
 
@@ -559,8 +567,8 @@ prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have 
   `memsup`, `cpu_sup`, `disksup` and `os_sup` stay switched off, since their programs would run on
   the host and report on it rather than on the VM; the [memory alarm](#memory-and-restarts) stands
   in for `memsup`'s.
-- Memory: at most 4 GiB, and it never shrinks back once grown (see
-  [Memory and restarts](#memory-and-restarts)).
+- Memory: at most 4 GiB. Freed memory goes back to the host, but the VM keeps the address space a
+  spike reached (see [Memory and restarts](#memory-and-restarts)).
 - File permissions: files the app creates start at 0644 (directories 0755), less the host's umask,
   as on most hosts natively; `File.chmod/2` then sets the mode on the host file. It cannot set
   setuid or setgid bits, and the owner (`File.stat/1`'s `uid`, `gid`) always reads 0.
