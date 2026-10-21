@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-21
+
 ### Added
 
 - Programs the release ships in its own `priv/` directories run, by default without

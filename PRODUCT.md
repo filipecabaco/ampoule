@@ -44,7 +44,7 @@ running needs nothing.
   shipped in `priv/` are not packed. Unix domain sockets, `File.chmod`, the host pid, a memory alarm
   and restart-on-failure since v0.1.4.
 - Distribution with or without epmd (one node per address without the host's epmd); NIF threads must return rather than call `enif_thread_exit`.
-- Released: v0.1.6 on GitHub Releases, one binary and one archive (with the NIF kit) per target.
+- Released: v0.1.7 on GitHub Releases, one binary and one archive (with the NIF kit) per target.
 
 ## Brand Commitments
 
@@ -62,8 +62,9 @@ running needs nothing.
 
 ## Evidence on Hand
 
-- Measured on `examples/francis` (aarch64-darwin): packs to 26.3 MiB in 0.3 s after `mix release`;
-  first HTTP response about 0.3 s after launch (about 1 s on a cold first run).
+- Measured on `examples/francis` (aarch64-darwin): packs to 13.4 MiB (v0.1.7; 26.3 MiB before the
+  lean runtime) in 0.3 s after `mix release`; first HTTP response about 0.3 s after launch (about 1
+  s on a cold first run).
 - Real terminal output from `ampoule release` (README.md).
 - The Linux binary, cross-packed from macOS, ran alone in a `FROM scratch` container; `docker stop`
   shut it down cleanly in about 1 s.
