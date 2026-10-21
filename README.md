@@ -12,7 +12,7 @@ $ cd my_app
 $ ampoule release
 ==> MIX_ENV=prod mix release --overwrite
 ==> my_app 0.1.0: 1018 files, 11.6 MiB → 5.2 MiB image (32 paths pruned)
-_build/prod/ampoule/my_app-aarch64-darwin (26.3 MiB)
+_build/prod/ampoule/my_app-aarch64-darwin (13.4 MiB)
 ==> packed in 0.3s; run `<binary> help` for its commands
 
 $ _build/prod/ampoule/my_app-aarch64-darwin start
@@ -101,9 +101,9 @@ An app with NIFs gets them rebuilt for wasm during `ampoule release`, from C, C+
 The output shows each one:
 
 ```console
-==> building eiconv for wasm (priv/eiconv_nif.so)
-==> linking the engine with 1 NIF(s): eiconv_nif
-_build/prod/ampoule/my_app-aarch64-darwin (35.5 MiB)
+==> building checksum for wasm (priv/checksum_nif.so)
+==> linking the engine with 1 NIF(s): checksum_nif
+_build/prod/ampoule/checksum-aarch64-darwin (17.0 MiB)
 ```
 
 This needs wasi-sdk on the packing machine (see [NIFs](#nifs)). The machine that runs the binary
@@ -116,6 +116,7 @@ runs the binary and tests it from the outside:
 |---|---|
 | [`phoenix_ecto`](examples/phoenix_ecto) | Phoenix JSON API on Ecto and Postgres; `serve` creates and migrates the database, then starts |
 | [`c_nif`](examples/c_nif) | the project's own C NIF in `c_src/`, built by `elixir_make` |
+| [`cluster`](examples/cluster) | Erlang distribution without epmd: nodes from one binary find each other; `rpc` and `remote` |
 | [`francis`](examples/francis) | Francis: HTML, JSON, server-sent events, the network policy |
 | [`ports`](examples/ports) | host programs: `System.cmd/3`, `:os.cmd/1` and a supervised long-running port |
 | [`sqlite`](examples/sqlite) | SQLite through exqlite's C NIF, with the database in a mounted host directory |
@@ -125,7 +126,8 @@ runs the binary and tests it from the outside:
 
 Download the archive for your machine from the [releases page](https://github.com/filipecabaco/ampoule/releases). There is one for
 `aarch64-darwin`, `x86_64-darwin`, `aarch64-linux` and `x86_64-linux`, each holding `ampoule`, the
-NIF kit (`kit/`) and the license. Keep `kit/` next to `ampoule`. `ampoule-<target>.tar.gz` is the
+lean runtime `ampoule-<target>`, the NIF kit (`kit/`) and the license. Keep `kit/` and the lean
+runtime next to `ampoule`. `ampoule-<target>.tar.gz` is the
 latest release, unpacking to `ampoule/`:
 
 ```sh
@@ -137,7 +139,11 @@ ampoule version
 `ampoule-<version>-<target>.tar.gz` is the same archive for one version, unpacking to
 `ampoule-<version>-<target>/`.
 
-If the app has no NIFs, the bare binary is enough:
+Packed apps start from the lean runtime: `ampoule` without the Cranelift compiler, which a packed
+app never needs (its engine is precompiled), so every binary is about 8 MiB smaller
+(examples/francis: 13.4 MiB instead of 21.8). When it is not next to `ampoule`, packing starts from
+`ampoule` itself, and it refuses a lean runtime from another release. The bare `ampoule-<target>` on
+the releases page is that runtime; on its own it packs apps without NIFs:
 `curl -fLo ampoule https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin && chmod +x ampoule`.
 
 Packing needs Elixir and Erlang/OTP 28 on the packing machine, since `ampoule release` runs
@@ -180,8 +186,10 @@ it; currently OTP 28, ERTS 16). `pack` refuses a mismatch.
 | `start` | start the release (like `bin/my_app start`) |
 | `serve` | run the `serve` sequence from the config (default: `start`) |
 | `eval EXPR` | evaluate an expression on a release that is not started (like `bin/my_app eval`) |
+| `remote` | a shell on the running node (like `bin/my_app remote`; needs [distribution](#distribution)) |
+| `rpc EXPR` | evaluate an expression on the running node (like `bin/my_app rpc`; needs [distribution](#distribution)) |
 | `vm -- ERL_ARGS` | run the VM with raw `erl` arguments; the release is at `/app` |
-| `info` | what is packed: app, file count, runtime, commands, NIFs, network policy |
+| `info` | what is packed: app, file count, runtime, commands, NIFs, network policy, distribution |
 | `<name>` | a custom command from `[commands]` |
 
 Each option has an environment-variable form, and a flag wins over its variable:
@@ -203,20 +211,28 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--memory-alarm PCT` | `AMPOULE_MEMORY_ALARM` | with `start`, set the `system_memory_high_watermark` alarm at `PCT`% of the memory limit (default: 80; 0 turns it off) |
 | `--idle-stop TIME` | `AMPOULE_IDLE_STOP` | with `start`, stop the VM after `TIME` without connections and start it again on the next one (`300`, `90s`, `5m`, `1h`; see [Stopping when idle](#stopping-when-idle)) |
 | `--stop-timeout SECS` | `AMPOULE_STOP_TIMEOUT` | how long SIGTERM and SIGINT wait for a clean stop (default: 30) |
+| `--node NAME` | `RELEASE_NODE` | run `start` as a distributed node, `NAME` or `NAME@HOST` (see [Distribution](#distribution)) |
+| `--distribution MODE` | `RELEASE_DISTRIBUTION` | `name`, `sname` or `none` (default: `none`, or what `--node` implies) |
+| `--dist-port PORT` | `AMPOULE_DIST_PORT` | the distribution port; without epmd, every node's (default: 9100) |
+| `--epmd MODE` | `AMPOULE_EPMD` | `none`: peers are on the distribution port (default); `host`: register with the host's epmd |
+| `--cookie-file FILE` | `AMPOULE_COOKIE_FILE` | the distribution cookie (default: `RELEASE_COOKIE`, else the release's own) |
 | `--tmp DIR` | `AMPOULE_TMP` | host directory behind `/tmp` (default: a private one) |
 | | `AMPOULE_CA_BUNDLE` | CA certificates file (default: the host's) |
 | `--env KEY=VALUE` | | set an app environment variable |
 
 The rest of the host environment passes through to the app, so `PORT=8080 DATABASE_URL=... ./my_app start`
 works as it would with a normal release. Variables that would break the runtime's layout
-(`RELEASE_*`, `ERL_*`, `AMPOULE_*`, `ROOTDIR`, `BINDIR`, `HOME`, ...) are not passed through.
+(`RELEASE_*`, `ERL_*`, `AMPOULE_*`, `ROOTDIR`, `BINDIR`, `HOME`, ...) are not passed through;
+`RELEASE_NODE`, `RELEASE_DISTRIBUTION` and `RELEASE_COOKIE` configure [distribution](#distribution)
+instead.
 
 VM flags apply as they would with `erl`: `+` flags tune the emulator (`+S`, `+sbwt`, `+hmax`, ...),
 `-env` sets a variable and other flags reach `init`. They come from the release's `vm.args`, then
 `vm_args` in `ampoule.toml`, then `--vm-args` (or `AMPOULE_VM_ARGS`), and a later flag wins;
 `--schedulers` wins over all of them. Inside wasm the VM sees one processor, so scheduler counts
 that depend on it (`+S :4`, `+S -2`, `+SDcpu :2`) are resolved against the host's cores.
-Distribution flags (`-name`, `-sname`, `-setcookie`, ...) are left out with a warning.
+Distribution flags (`-name`, `-sname`, `-setcookie`, ...) are left out with a warning: the node is
+set by the [distribution](#distribution) options.
 
 For debugging, `AMPOULE_TRACE=1` logs path resolution and `poll_oneoff` calls to stderr, and
 `AMPOULE_ENGINE=path/to/beam.wasm` runs a different, non-precompiled engine.
@@ -249,6 +265,14 @@ port_map = { 4000 = 8080 }       # app port -> host port
 
 [process]
 allow = ["git", "/bin/sh"]       # host programs the app may start (default: none; "*": all on PATH)
+priv = false                     # programs in the release's own priv/ may not run (default: they may)
+
+[distribution]                   # `start` as a distributed node (default: off)
+node = "my_app@10.0.0.5"         # NAME or NAME@HOST; RELEASE_NODE and --node win
+mode = "name"                    # "name", "sname" or "none" (default: from `node`)
+port = 9100                      # the distribution port
+epmd = "none"                    # "none": peers are on `port`; "host": the host's epmd
+cookie_file = "/run/secrets/erlang-cookie"
 ```
 
 Each `serve` step runs as its own VM, because a guest exit ends the runtime process, and the last
@@ -335,9 +359,74 @@ ampoule: VM failed (status 1); restarting in 1s (1 of 5 in 5m)
 ```
 
 Usable memory is less than the limit: thread stacks and allocator overhead live in the same memory,
-more of it with more schedulers. The VM's memory also never shrinks once grown, so a spike stays
-reserved until the VM restarts. To kill a runaway process rather than the VM, cap process heaps with
+more of it with more schedulers. To kill a runaway process rather than the VM, cap process heaps with
 `+hmax` (and `+hmaxib true` to count binaries) in `vm_args`.
+
+**After a spike.** Memory the VM frees goes back to the host, so the process's RSS falls again
+once a spike is over: when ERTS releases a carrier, the runtime drops its pages, keeping at most
+32 MiB of them resident for the next carriers to reuse. ERTS's own cache of freed carriers is off
+(`+MMmcs 0`): it holds them per scheduler, where under a memory cap they make allocations fail that
+the free memory would serve; setting `+MMmcs` in `vm_args` turns it back on. What stays is the VM's
+address space: wasm memory cannot shrink, so the range a spike reached remains the VM's, reused for
+its later allocations without taking host memory, and `--memory-max` still caps it. Memory from
+`malloc` (NIFs, OpenSSL, thread stacks) is reused by the VM but not returned.
+
+### Distribution
+
+`start` runs the app as one node unless distribution is configured. Naming a node turns it on:
+
+```console
+$ RELEASE_COOKIE=... ./my_app --node my_app@10.0.0.5 start
+$ RELEASE_COOKIE=... ./my_app --node my_app@10.0.0.5 rpc 'IO.inspect(Node.list())'
+[:"my_app@10.0.0.6"]
+```
+
+The node is `-name` when its host has a dot or a colon (an FQDN or an IP address) and `-sname`
+otherwise; `--distribution` (`RELEASE_DISTRIBUTION`, `mode`) says which, as with `mix release`,
+and `none` turns distribution off. `eval` and custom commands run without distribution, as a native
+release's `eval` does. The node sees `RELEASE_NODE` and `RELEASE_DISTRIBUTION` in its environment.
+
+**Finding peers.** The runtime starts no epmd. There are two ways to find the other nodes:
+
+- Without epmd (`epmd = "none"`, the default): every node listens on the distribution port, 9100
+  unless `port` or `--dist-port` says otherwise, and reaches its peers on that same port. This is
+  OTP's `-erl_epmd_port`, which `mix release` documents for deploying without epmd; a release whose
+  `vm.args` sets `-erl_epmd_port` gets that port. A native node joins with the same flags:
+  `erl -name x@10.0.0.7 -setcookie ... -start_epmd false -erl_epmd_port 9100`.
+- With the host's epmd (`epmd = "host"`): the node registers with an epmd already running on the
+  host (`127.0.0.1:4369`, or `ERL_EPMD_PORT`), as a native release does, on a free port or on
+  `port`. ampoule does not start an epmd, and a machine without Erlang has none to start.
+
+Without epmd, two nodes on one address cannot both have the port. On one machine, give each node
+its own host port and send the other's there:
+
+```sh
+./my_app --node a@127.0.0.1 --port-map 9100:9101 --rewrite-connect 127.0.0.1:9100=127.0.0.1:9102 start
+./my_app --node b@127.0.0.1 --port-map 9100:9102 --rewrite-connect 127.0.0.1:9100=127.0.0.1:9101 start
+./my_app --node a@127.0.0.1 --dist-port 9101 rpc 'IO.inspect(Node.connect(:"b@127.0.0.1"))'
+```
+
+**The cookie** comes from `--cookie-file` (`AMPOULE_COOKIE_FILE`), then `RELEASE_COOKIE`, then
+`cookie_file` in `ampoule.toml`, then the release's own `releases/COOKIE`, as with `mix release`.
+That last one is generated when the release is built and packed into the binary, so anyone with the
+binary has it: set one of the others in production. The cookie reaches the VM on its command line
+inside the runtime, which the host's `ps` does not show, and ampoule never prints it.
+
+**The network policy** applies as to any socket. The distribution port is allowed even when
+`--listen` leaves it out, `--port-map` maps it (except with `epmd = "host"`, where epmd would give
+peers the app's port), and connections to peers go through `--rewrite-connect` and
+`--deny-connect`. Node names must resolve inside the app: an IP address works as it is, the host's
+own name (what `-sname` uses) is added to the app's `/etc/hosts` as `127.0.0.1` when the host's
+file does not have it, and other names come from the host's `/etc/hosts`, `--host` and DNS.
+
+**`remote` and `rpc`** take the same options as the node and connect to it: they start a hidden VM
+from the same binary that does not listen (`-dist_listen false`), with the release's
+`remote.vm.args`. When the node's port is mapped, give them the host port with `--dist-port`. As
+with a native release, a remote shell whose input ends stops the node it is attached to; leave it
+with Ctrl-C.
+
+In the release's `vm.args`, `-name`, `-sname` and `-setcookie` are left out with a warning, and
+`-hidden`, `-proto_dist`, `-epmd_module` and `-dist_listen` apply.
 
 ### What the app sees
 
@@ -346,7 +435,7 @@ The app sees only these paths:
 | Guest path | Backed by |
 |---|---|
 | `/app` | the embedded release (read-only; files are decompressed when opened) |
-| `/tmp` | a private host directory (`--tmp`, or `$TMPDIR/ampoule-<pid>`) |
+| `/tmp` | a private host directory (`--tmp`, or `$TMPDIR/ampoule-<pid>`); its `.ampoule/`, the runtime's own files, is read-only |
 | `/etc/hosts` | the host's file plus `--host` entries |
 | `/etc/resolv.conf` | the host's |
 | `/etc/ssl/certs/ca-certificates.crt` | the host's CA bundle (or `AMPOULE_CA_BUNDLE`) |
@@ -381,7 +470,8 @@ macOS and 108 on Linux as the host sees it; on macOS that includes the private `
 ### Host programs
 
 Ports, `System.cmd/3` and `:os.cmd/1` start host programs, but only the ones the app allows in
-`[process] allow` (or `--allow-exec`, which replaces that list). Nothing is allowed by default.
+`[process] allow` (or `--allow-exec`, which replaces that list). Nothing on the host is allowed by
+default; programs the release ships in its own `priv/` are (see below).
 
 ```toml
 [process]
@@ -408,6 +498,35 @@ get natively. A program that is not allowed fails with `:eacces`.
 - An empty `FROM scratch` image has no programs to run, not even `/bin/sh`.
 - Exit statuses, `os_pid`, `stderr_to_stdout`, `nouse_stdio` and `{:packet, N}` behave as on a
   native release.
+
+Programs the release ships in its own `priv/` directories run without being allowed: they are the
+app's code. Start one by its path, as on a native release:
+
+```elixir
+System.cmd(Path.join(:code.priv_dir(:my_app), "bin/tool"), ["--version"])
+Port.open({:spawn_executable, Path.join(:code.priv_dir(:my_app), "bin/tool")}, [:binary, :exit_status])
+```
+
+The release's files exist only inside the binary, so the first time a program from an app's
+`priv/` starts, the runtime extracts that app's whole `priv/` to the private `/tmp`, under
+`.ampoule/priv/<app>-<vsn>/`, with the same layout and modes. A program that finds files next to
+itself through its own path finds them there. Each app's `priv/` is extracted once per run, and the
+app sees the copy read-only, so it cannot change what runs.
+
+- Only a file below `/app/lib/<app>-<vsn>/priv/` qualifies, after symlinks are resolved inside the
+  release. A link that leaves the app's `priv/` is not followed when extracting.
+- The program runs on the host like any other: the same rules for `cd:`, arguments and environment
+  apply, and a `#!` script's interpreter is whatever the host has at that path.
+- Packing keeps shell scripts (`.sh`) under `priv/`, where it drops them elsewhere. It also reads the
+  header of each executable in `priv/` and warns when one is built for another OS or CPU than the
+  target, without failing:
+  `==> warning: lib/my_app-0.1.0/priv/bin/tool is a macOS arm64 program; it won't run on x86_64-linux`.
+  Build such programs for each target you pack for, or ship a script.
+- A shell command line (`:os.cmd/1`, `{:spawn, Cmd}`) goes to the host's `/bin/sh` as it is, and a
+  path inside `/app` means nothing there: start priv programs with `System.cmd/3` or
+  `{:spawn_executable, Path}`.
+- `[process] priv = false` turns this off: then a program in `priv/` fails with `:eacces`, as any
+  program that is not allowed does.
 
 ### NIFs
 
@@ -447,24 +566,29 @@ prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have 
 
 ## Limitations
 
-- Host programs run only when [allowed](#host-programs). Port programs inside the release (`priv/`)
-  are not packed, so they cannot run. For the same reason os_mon's `memsup`, `cpu_sup`, `disksup`
-  and `os_sup` are switched off; the [memory alarm](#memory-and-restarts) stands in for `memsup`'s.
-- Memory: at most 4 GiB, and it never shrinks back once grown (see
-  [Memory and restarts](#memory-and-restarts)).
+- Host programs run only when [allowed](#host-programs). Programs in the release's own `priv/` run
+  as they were built: one compiled on the machine that packed runs only on hosts of the same OS and
+  CPU, and packing warns about the others. os_mon's
+  `memsup`, `cpu_sup`, `disksup` and `os_sup` stay switched off, since their programs would run on
+  the host and report on it rather than on the VM; the [memory alarm](#memory-and-restarts) stands
+  in for `memsup`'s.
+- Memory: at most 4 GiB. Freed memory goes back to the host, but the VM keeps the address space a
+  spike reached (see [Memory and restarts](#memory-and-restarts)).
 - File permissions: files the app creates start at 0644 (directories 0755), less the host's umask,
   as on most hosts natively; `File.chmod/2` then sets the mode on the host file. It cannot set
   setuid or setgid bits, and the owner (`File.stat/1`'s `uid`, `gid`) always reads 0.
 - Identity: `:os.type()` is `{:unix, :linux}` and `:erlang.system_info(:logical_processors)` is 1
   on every host. `System.pid/0` is the host pid of the process running the VM (the child, under
   `--restart` or `--idle-stop`).
-- Distribution: the app runs as one node; packing removes distribution from its start arguments,
-  and the runtime leaves distribution flags in `vm.args` out.
+- Distribution: no epmd is started, so without the host's epmd every node of a cluster uses the
+  same distribution port, one node per address (see [Distribution](#distribution)). Clustering
+  was tested over TCP (`inet_tcp_dist`) on one machine; TLS distribution was not.
 - NIF threads: a thread a NIF starts must return from its function. `enif_thread_exit` ends the
   thread without the cleanup wasi-libc would do, so joining that thread never returns.
 - OTP version: the engine fixes the OTP major, currently OTP 28 (ERTS 16).
 - Precompressed static files: packing drops `.gz` and `.br` files, along with sources, docs, `.map`
-  files and host binaries. `Plug.Static` falls back to the uncompressed file.
+  files, host libraries and shell scripts outside `priv/`. `Plug.Static` falls back to the
+  uncompressed file.
 - Debug information: `.beam` files lose their `Dbgi`, `Docs`, `ExCk`, `ExDp` and `Abst` chunks, so
   `Code.fetch_docs/1` and the debugger's source views have nothing to show.
 

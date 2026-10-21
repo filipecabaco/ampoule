@@ -33,6 +33,84 @@ index 2b0a942..f6e1633 100644
      build_file_info(&data, result);
  
  #ifndef NO_ACCESS
+diff --git a/erts/emulator/sys/common/erl_mmap.c b/erts/emulator/sys/common/erl_mmap.c
+index e07a162..101d83d 100644
+--- a/erts/emulator/sys/common/erl_mmap.c
++++ b/erts/emulator/sys/common/erl_mmap.c
+@@ -1303,7 +1303,11 @@ Eterm build_free_seg_list(Process* p, ErtsFreeSegMap* map)
+ static ERTS_INLINE void *
+ os_mmap(void *hint_ptr, UWord size)
+ {
+-#if HAVE_MMAP
++#if defined(__wasi__)
++    /* ampoule: pages of linear memory that go back to the host when unmapped (ampoule_os.h). */
++    (void) hint_ptr;
++    return aos_pages_alloc((size_t) size, sys_page_size);
++#elif HAVE_MMAP
+     void *res;
+ 
+     res = mmap((void *) hint_ptr, size, ERTS_MMAP_PROT,
+@@ -1322,7 +1326,9 @@ os_mmap(void *hint_ptr, UWord size)
+ static ERTS_INLINE void
+ os_munmap(void *ptr, UWord size)
+ {
+-#if HAVE_MMAP
++#if defined(__wasi__)
++    aos_pages_free(ptr, (size_t) size);
++#elif HAVE_MMAP
+ #ifdef ERTS_MMAP_DEBUG
+     int res =
+ #endif
+@@ -1351,7 +1357,9 @@ static ERTS_INLINE void *
+ os_mmap_aligned(UWord size, UWord alignment)
+ {
+     char *result;
+-#ifdef MAP_ALIGN
++#if defined(__wasi__)
++    result = aos_pages_alloc((size_t) size, (size_t) alignment);
++#elif defined(MAP_ALIGN)
+ 
+     /*
+      * On an operating systems that support MAP_ALIGN (SunOS >=5.9) we
+diff --git a/erts/emulator/sys/common/erl_mseg.c b/erts/emulator/sys/common/erl_mseg.c
+index 3381d33..6586e0c 100644
+--- a/erts/emulator/sys/common/erl_mseg.c
++++ b/erts/emulator/sys/common/erl_mseg.c
+@@ -683,6 +683,21 @@ void erts_mseg_clear_cache(void) {
+     mseg_clear_cache(ERTS_MSEG_ALLCTR_IX(0));
+ }
+ 
++#if defined(__wasi__)
++/* ampoule: linear memory has a hard limit (--memory-max, or 4 GiB). When it is reached, segments
++ * waiting in this allocator's cache are released and the allocation tried again, rather than
++ * failing while they sit unused. Called with `ma` locked, as mseg_alloc is. */
++static void mseg_drop_all_cached(ErtsMsegAllctr_t *ma) {
++    int i;
++    for (i = 0; i < CACHE_AREAS; i++) {
++	if (!erts_circleq_is_empty(&(ma->cache_powered_node[i])))
++	    mseg_drop_cache_size(ma, ERTS_MSEG_FLG_2POW, &(ma->cache_powered_node[i]));
++    }
++    if (!erts_circleq_is_empty(&(ma->cache_unpowered_node)))
++	mseg_drop_cache_size(ma, ERTS_MSEG_FLG_NONE, &(ma->cache_unpowered_node));
++}
++#endif
++
+ static void *
+ mseg_alloc(ErtsMsegAllctr_t *ma, ErtsAlcType_t atype, UWord *size_p,
+ 	   Uint flags, const ErtsMsegOpt_t *opt)
+@@ -706,6 +721,12 @@ mseg_alloc(ErtsMsegAllctr_t *ma, ErtsAlcType_t atype, UWord *size_p,
+ 	goto done;
+ 
+     seg = mseg_create(ma, flags, &size);
++#if defined(__wasi__)
++    if (!seg && ma->cache_size > 0) {
++	mseg_drop_all_cached(ma);
++	seg = mseg_create(ma, flags, &size);
++    }
++#endif
+ 
+     if (!seg)
+ 	*size_p = 0;
 diff --git a/erts/emulator/sys/unix/erl_unix_sys.h b/erts/emulator/sys/unix/erl_unix_sys.h
 index a63f0b4..201f37e 100644
 --- a/erts/emulator/sys/unix/erl_unix_sys.h
@@ -67,7 +145,7 @@ index a63f0b4..201f37e 100644
  #define ERTS_HAVE_TRY_CATCH 1
  
 diff --git a/erts/emulator/sys/unix/sys.c b/erts/emulator/sys/unix/sys.c
-index 4663b68..ba01670 100644
+index 4663b68..456b5cd 100644
 --- a/erts/emulator/sys/unix/sys.c
 +++ b/erts/emulator/sys/unix/sys.c
 @@ -109,7 +109,9 @@ static int sig_suspend_fds[2] = {-1, -1};

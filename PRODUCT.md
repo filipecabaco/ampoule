@@ -43,8 +43,8 @@ running needs nothing.
 - Host programs (ports, `System.cmd`, `:os.cmd`) only when listed in `[process] allow`; programs
   shipped in `priv/` are not packed. Unix domain sockets, `File.chmod`, the host pid, a memory alarm
   and restart-on-failure since v0.1.4.
-- One node (no distribution); NIF threads must return rather than call `enif_thread_exit`.
-- Released: v0.1.6 on GitHub Releases, one binary and one archive (with the NIF kit) per target.
+- Distribution with or without epmd (one node per address without the host's epmd); NIF threads must return rather than call `enif_thread_exit`.
+- Released: v0.1.7 on GitHub Releases, one binary and one archive (with the NIF kit) per target.
 
 ## Brand Commitments
 
@@ -62,16 +62,17 @@ running needs nothing.
 
 ## Evidence on Hand
 
-- Measured on `examples/francis` (aarch64-darwin): packs to 26.3 MiB in 0.3 s after `mix release`;
-  first HTTP response about 0.3 s after launch (about 1 s on a cold first run).
+- Measured on `examples/francis` (aarch64-darwin): packs to 13.4 MiB (v0.1.7; 26.3 MiB before the
+  lean runtime) in 0.3 s after `mix release`; first HTTP response about 0.3 s after launch (about 1
+  s on a cold first run).
 - Real terminal output from `ampoule release` (README.md).
 - The Linux binary, cross-packed from macOS, ran alone in a `FROM scratch` container; `docker stop`
   shut it down cleanly in about 1 s.
 - Supabase Realtime, a large production Phoenix app, passed its own end-to-end suite (53/53) when
   packed (`scripts/realtime.exs`, run before the rename).
-- Six examples with end-to-end suites: `c_nif`, `francis`, `phoenix_ecto`, `ports`, `rustler`,
-  `sqlite`; 40 tests in all (3, 18, 6, 4, 7, 2), all passing in CI on macOS and Linux on 2026-10-20
-  (`phoenix_ecto` on Linux only).
+- Seven examples with end-to-end suites: `c_nif`, `cluster`, `francis`, `phoenix_ecto`, `ports`,
+  `rustler`, `sqlite`; 48 tests in all (3, 7, 18, 6, 5, 7, 2), all passing in CI on macOS and Linux
+  on 2026-10-21 (`phoenix_ecto` on Linux only).
 - Measured on an Apple M5 Pro (6 performance + 12 efficiency cores, 48 GB, macOS 26.7), 2026-10-20:
   - One CPU-bound job (36 tasks × 50M integer steps) against 1 scheduler: 1.98× at 2, 3.45× at 4,
     4.9× at 6, 6.3× at 8, 8.37× at 12, 10.7× at 18 (11.2× in a second run).

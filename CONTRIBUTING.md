@@ -40,13 +40,32 @@ TLS record goes through.
 The emulator is built with link-time optimisation: `-flto` goes to `make` (not to configure's
 `CFLAGS`, where OpenSSL's link probe would fail as bitcode) and `--lto-O3` to the link. The kit's
 objects are therefore LLVM bitcode, and `kit.json` records the LLVM version that can link them.
-`runner/src/engine.rs` (`for_target`) holds the CPU features each target's precompiled engine may
-assume.
+`runner/src/engine_target.rs` (`for_target`) holds the CPU features each target's precompiled
+engine may assume.
+
+The runner builds two ways. By default it has the `compiler` feature (Cranelift): it packs, and it
+precompiles engines relinked with NIFs. `cargo build --release --no-default-features` is the lean
+runtime, about 8 MiB smaller, which only loads precompiled engines: releases ship it as
+`ampoule-<target>`, and packing starts apps from it when it sits next to `ampoule`. Precompiled
+code loads into either, since `engine.rs`, the configuration both share with `build.rs`, sets
+nothing Cranelift-specific. CI lints and builds both, and runs the smoke test and the examples on
+the lean runtime.
 
 To change ERTS, unpack OTP somewhere, apply the patch, make the change, and write the patch back with
 `git diff` (or `diff -ru`) from the OTP root. `engine/ampoule-os/include/ampoule_os.h` is
 force-included into every ERTS and NIF compile. It maps the POSIX calls wasi-libc lacks onto the
 `ampoule_os` imports that `runner/src/net.rs` implements.
+
+ERTS gets its carriers (`erl_mseg`) from `aos_pages_alloc` in `engine/ampoule-os/src/aos.c`, not
+from wasi-libc's emulated `mmap`, which mallocs and cannot unmap part of a mapping: the patch
+points `os_mmap`/`os_munmap` in `erl_mmap.c` at it. It hands out whole wasm pages, tracked in three
+bitmaps (pages it grew the memory by, pages in use, free pages still resident), and reuses freed
+ranges first-fit, resident ones first. Up to 32 MiB of freed pages stay resident; past that,
+freeing a range calls the `discard` import (`runner/src/mem.rs`), which drops the pages on the
+host: `madvise(MADV_DONTNEED)` on Linux, a fresh `MAP_FIXED` anonymous mapping over them on macOS,
+where `MADV_DONTNEED` leaves them resident. The runtime turns ERTS's per-scheduler segment cache off
+(`-MMmcs 0`, in `main.rs`); for an app that turns it back on, the patch has `erl_mseg.c` empty the
+cache and retry when the memory limit is reached.
 
 The runner's `build.rs` precompiles `build/engine/beam.wasm` (or `AMPOULE_BEAM`) for the target
 and embeds it in the binary.
@@ -61,7 +80,7 @@ engine comes back from the cache.
 | | What it checks |
 |---|---|
 | `cargo test` | the runtime's pure logic: paths and mounts, network policy, config, `.beam` stripping, the payload format |
-| `scripts/smoke.exs` | packs `test/fixture` (a C NIF) and checks the binary from inside (filesystem, `/proc`, NIF, TCP, TLS) and outside (serving, SIGTERM) |
+| `scripts/smoke.exs` | packs `test/fixture` (a C NIF) and checks the binary from inside (filesystem, `/proc`, NIF, TCP, TLS) and outside (RSS falling after a memory spike, serving, SIGTERM) |
 | `scripts/examples.exs` | each example's `test/e2e` suite against its packed binary |
 | `scripts/realtime.exs` | Realtime's own e2e suite against a packed Realtime (`test/realtime/ampoule.toml`); run by hand |
 
@@ -101,11 +120,14 @@ and `SHA256SUMS`.
 | `nif.rs` | rebuilding NIFs for wasm (Mix and cargo) and relinking the engine |
 | `toolchain.rs` | wasi-sdk and kit discovery, and the `ampoule-cc`/`c++` compiler wrapper |
 | `config.rs` | `ampoule.toml` and the embedded manifest |
+| `dist.rs` | Erlang distribution: node name, cookie, epmd or a fixed port, and the `remote`/`rpc` client |
 | `engine.rs` | wasmtime configuration, shared with `build.rs` |
+| `engine_target.rs` | Cranelift settings for precompiling the engine for a target (`build.rs`, and NIF engines with the `compiler` feature) |
 | `kernel.rs` | fd table, mount table, path resolution |
 | `wasi.rs` | `wasi_snapshot_preview1` |
 | `net.rs` | the `ampoule_os` module: BSD sockets, pipes, `dup`, signal registration |
 | `spawn.rs` | host processes: the runtime's stand-in for `erl_child_setup`, and `[process] allow` |
+| `shipped.rs` | programs in the release's own `priv/`: extracting them to run, and reading what they were built for |
 | `unix.rs` | unix domain sockets at guest paths |
 | `fds.rs` | creating host fds close-on-exec, and the lock `fork` takes on macOS |
 | `idle.rs` | the `start` supervisor: `--idle-stop` and `--restart` |
@@ -114,5 +136,5 @@ and `SHA256SUMS`.
 | `threads.rs` | `wasi.thread-spawn` and the main thread |
 | `proc.rs` | the generated `/proc` |
 | `vfs.rs` | the embedded rootfs reader |
-| `mem.rs` | access to the shared linear memory |
+| `mem.rs` | access to the shared linear memory, and handing freed pages back to the host |
 | `errno.rs` | WASI errno codes and host errno translation |

@@ -19,7 +19,8 @@
 //! directories are translated from guest paths, but arguments and environment pass as they are
 //! (except `HOME`, the guest's /tmp). Only what the policy allows runs (`[process] allow`,
 //! `--allow-exec`), and each allowed executable or directory is also mounted read-only at its host
-//! path, so `os:find_executable` (which `System.cmd/3` calls) finds it in the guest.
+//! path, so `os:find_executable` (which `System.cmd/3` calls) finds it in the guest. Programs the
+//! release ships in its own priv/ directories run too, from a host copy (see `shipped`).
 
 use std::ffi::{c_char, CString};
 use std::os::fd::{AsRawFd, RawFd};
@@ -64,10 +65,14 @@ const FLAG_USE_STDIO: u32 = 1;
 const FLAG_DO_READ: u32 = 4;
 const FLAG_DO_WRITE: u32 = 8;
 
-/// What the guest may run: host executables, and directories of them, by canonical host path.
+/// What the guest may run: host executables, and directories of them, by canonical host path; and
+/// the programs in the release's own priv/ directories, unless they are switched off.
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Exec {
     pub allowed: Vec<Allowed>,
+    /// The host directory programs from the release's priv/ are extracted to (see `shipped`), or
+    /// None when they may not run (`[process] priv = false`).
+    pub priv_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -106,7 +111,7 @@ impl Exec {
                 add(&guest, &host, false);
             }
         }
-        Exec { allowed }
+        Exec { allowed, priv_dir: None }
     }
 
     /// The path to execute for `host`, if the guest may run it: the canonical file, when that is an
@@ -273,12 +278,21 @@ fn cstring(b: &[u8]) -> R<CString> {
 
 /// What to run for `req`, or the errno open_port reports.
 fn prepare(k: &Kernel, req: &Request) -> R<Prepared> {
-    let (program, argv) = match &req.argv {
-        Some(argv) => (k.host_path(&guest_abs(&req.cwd, &req.cmd))?, argv.iter().map(|a| cstring(a)).collect::<R<Vec<_>>>()?),
-        None => (PathBuf::from("/bin/sh"), vec![cstring(b"sh")?, cstring(b"-c")?, cstring(&req.cmd)?]),
+    // A program from the release's own priv/ runs without being allowed; any other is the policy's.
+    let (program, shipped, argv) = match &req.argv {
+        Some(argv) => {
+            let guest = guest_abs(&req.cwd, &req.cmd);
+            let (program, shipped) = match crate::shipped::program(k, &guest) {
+                Some(p) => (p?, true),
+                None => (k.host_path(&guest)?, false),
+            };
+            (program, shipped, argv.iter().map(|a| cstring(a)).collect::<R<Vec<_>>>()?)
+        },
+        None => (PathBuf::from("/bin/sh"), false, vec![cstring(b"sh")?, cstring(b"-c")?, cstring(&req.cmd)?]),
     };
+    let allowed = if shipped { Some(program.clone()) } else { k.policy.exec.program(&program) };
     // Not inside a mount the guest writes to, where it could swap the file or a symlink to it.
-    let Some(program) = k.policy.exec.program(&program).filter(|p| !k.guest_writable(p)) else {
+    let Some(program) = allowed.filter(|p| !k.guest_writable(p)) else {
         if crate::trace() {
             eprintln!("[trace] spawn refused: {} is not allowed", program.display());
         }
@@ -504,7 +518,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
                 }
                 Ok(len)
             };
-            if kernel.policy.exec.allowed.is_empty() {
+            if kernel.policy.exec.allowed.is_empty() && kernel.policy.exec.priv_dir.is_none() {
                 return refuse(errno::ACCES);
             }
             if CHILDREN.fetch_add(1, Ordering::Relaxed) >= MAX_CHILDREN {
@@ -623,6 +637,7 @@ mod tests {
                 Allowed { guest: "/app/bin".into(), host: "/x".into(), dir: true },
                 Allowed { guest: "/usr/bin/git".into(), host: "/usr/bin/git".into(), dir: false },
             ],
+            priv_dir: None,
         };
         let guests: Vec<String> = exec.mounts(&["/app", "/proc"]).into_iter().map(|m| m.guest).collect();
         assert_eq!(guests, vec!["/usr/bin/git".to_string()]);

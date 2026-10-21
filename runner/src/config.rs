@@ -24,6 +24,14 @@
 //!
 //! [process]
 //! allow = ["git", "/bin/sh"]       # host programs the app may start ("*": everything on PATH)
+//! priv = false                     # programs in the release's own priv/ may not run (default: they may)
+//!
+//! [distribution]                   # Erlang distribution for `start` (default: off)
+//! mode = "name"                    # "name", "sname" or "none"
+//! node = "my_app@10.0.0.5"         # default: the release name
+//! port = 9100                      # the distribution port (default: 9100 without epmd)
+//! epmd = "none"                    # "none": every node on `port`; "host": the host's epmd
+//! cookie_file = "/run/secrets/erlang-cookie"
 //! ```
 
 use std::collections::BTreeMap;
@@ -65,12 +73,25 @@ pub struct Network {
     pub port_map: BTreeMap<String, u16>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Process {
     /// Host programs the app may start: bare names (looked up on PATH), absolute paths, or `*`.
     #[serde(default)]
     pub allow: Vec<String>,
+    /// `priv`: programs in the release's own priv/ directories may run (the default).
+    #[serde(rename = "priv", default = "yes")]
+    pub run_priv: bool,
+}
+
+impl Default for Process {
+    fn default() -> Process {
+        Process { allow: Vec::new(), run_priv: true }
+    }
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Process {
@@ -82,6 +103,25 @@ impl Process {
         }
         Ok(())
     }
+}
+
+/// `[distribution]`: see `dist`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Distribution {
+    /// "name", "sname" or "none" (RELEASE_DISTRIBUTION); unset: on when `node` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// "none" or "host".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epmd: Option<String>,
+    /// A host file holding the cookie, read when the binary runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cookie_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -106,6 +146,8 @@ pub struct Config {
     pub network: Network,
     #[serde(default)]
     pub process: Process,
+    #[serde(default)]
+    pub distribution: Distribution,
     /// VM flags written as in vm.args, applied after the release's vm.args.
     #[serde(default)]
     pub vm_args: String,
@@ -130,6 +172,7 @@ impl Config {
             }
         }
         Process::check(&cfg.process.allow).with_context(|| format!("{}: [process]", path.display()))?;
+        crate::dist::Opts::from_config(&cfg.distribution).with_context(|| format!("{}: [distribution]", path.display()))?;
         if let Some(d) = &cfg.idle_stop {
             crate::idle::parse_duration(d).with_context(|| format!("{}: idle_stop", path.display()))?;
         }
@@ -151,7 +194,7 @@ impl Config {
     }
 }
 
-pub const BUILTIN_COMMANDS: &[&str] = &["start", "serve", "eval", "vm", "info", "help"];
+pub const BUILTIN_COMMANDS: &[&str] = &["start", "serve", "eval", "remote", "rpc", "vm", "info", "help"];
 
 /// `restart`: true for "on-failure", false for "off" or "no".
 pub fn parse_restart(s: &str) -> Result<bool> {
@@ -169,7 +212,8 @@ pub const MEMORY_ALARM: u8 = 80;
 /// as os_mon's memsup would, once the VM's memory reaches `pct` percent of its limit, and clears it
 /// 10 points lower. The limit is MemTotal in the runtime's /proc/meminfo; what counts is
 /// `erlang:memory(total)`, which falls again as memory is freed (the wasm memory itself never
-/// shrinks). memsup cannot run here: on Linux it needs a host program packing leaves out.
+/// shrinks). memsup stays off here: its port program would run on the host and measure the host's
+/// memory, not the VM's limit.
 pub fn memory_alarm_eval(pct: u8) -> String {
     format!(
         r#"Pct = {pct},
@@ -215,6 +259,9 @@ pub struct Manifest {
     /// `[process]` from ampoule.toml.
     #[serde(default)]
     pub process: Process,
+    /// `[distribution]` from ampoule.toml.
+    #[serde(default)]
+    pub distribution: Distribution,
     /// NIFs linked into the payload's engine (by library name).
     #[serde(default)]
     pub nifs: Vec<String>,
@@ -249,6 +296,7 @@ impl Manifest {
             start_env: cfg.start.env,
             network: cfg.network,
             process: cfg.process,
+            distribution: cfg.distribution,
             nifs: Vec::new(),
             vm_args: cfg.vm_args,
             idle_stop: cfg.idle_stop,
@@ -333,6 +381,15 @@ mod tests {
     }
 
     #[test]
+    fn priv_programs_run_unless_switched_off() {
+        let (on, off) = (load("[process]\nallow = [\"git\"]\n").unwrap(), load("[process]\npriv = false\n").unwrap());
+        assert!(on.process.run_priv && Config::default().process.run_priv && !off.process.run_priv);
+        // A manifest packed before the key existed keeps the default.
+        let old: Process = serde_json::from_str(r#"{"allow": []}"#).unwrap();
+        assert!(old.run_priv);
+    }
+
+    #[test]
     fn config_rejects_relative_paths_in_process_allow() {
         assert!(load("[process]\nallow = [\"bin/tool\"]\n").is_err());
     }
@@ -345,6 +402,24 @@ mod tests {
     #[test]
     fn config_rejects_a_memory_alarm_above_100() {
         assert!(load("memory_alarm = 150\n").is_err() && load("memory_alarm = 75\nrestart = \"on-failure\"\n").is_ok());
+    }
+
+    #[test]
+    fn config_reads_distribution() {
+        let cfg = load("[distribution]\nnode = \"app@10.0.0.5\"\nport = 9200\nepmd = \"host\"\ncookie_file = \"/run/secrets/cookie\"\n").unwrap();
+        let d = cfg.distribution;
+        assert_eq!(
+            (d.node.as_deref(), d.port, d.epmd.as_deref(), d.cookie_file.as_deref()),
+            (Some("app@10.0.0.5"), Some(9200), Some("host"), Some("/run/secrets/cookie"))
+        );
+    }
+
+    #[test]
+    fn config_rejects_bad_distribution_values() {
+        assert!(load("[distribution]\nmode = \"long\"\n").is_err());
+        assert!(load("[distribution]\nepmd = \"local\"\n").is_err());
+        assert!(load("[distribution]\ncookie = \"secret\"\n").is_err());
+        assert!(load("[distribution]\nmode = \"sname\"\nnode = \"app@10.0.0.5\"\n").is_err());
     }
 
     #[test]

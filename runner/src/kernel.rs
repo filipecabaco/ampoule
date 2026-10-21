@@ -7,6 +7,7 @@
 //! (host files, sockets, pipes, stdio) go straight to the host kernel; embedded files are read
 //! into memory when opened.
 
+use std::collections::HashMap;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
@@ -157,6 +158,8 @@ pub struct Kernel {
     /// The write end of the pipe the spawn driver reads child exits from (see `spawn`).
     pub forker: OnceLock<OwnedFd>,
     pub policy: Policy,
+    /// Apps whose priv/ has been extracted to run a program from it, and where (see `shipped`).
+    pub extracted: Mutex<HashMap<String, PathBuf>>,
 }
 
 /// Make `p` absolute and remove ".", ".." and empty components.
@@ -192,14 +195,17 @@ impl Kernel {
             signal_pipe: OnceLock::new(),
             forker: OnceLock::new(),
             policy,
+            extracted: Mutex::new(HashMap::new()),
         }
     }
 
     /// The guest's single preopen: "/" at fd 3.
     pub const PREOPEN_FD: i32 = 3;
 
-    fn locate(&self, guest: &str) -> Target<'_> {
-        for m in &self.mounts {
+    /// The mount `guest` falls in (the longest that matches), and the path below it ("/" for the
+    /// mount itself).
+    fn mount_for<'a>(&self, guest: &'a str) -> Option<(&Mount, &'a str)> {
+        self.mounts.iter().find_map(|m| {
             let rest = if m.guest == "/" {
                 Some(guest)
             } else if guest == m.guest {
@@ -207,13 +213,22 @@ impl Kernel {
             } else {
                 guest.strip_prefix(&m.guest).filter(|r| r.starts_with('/'))
             };
-            if let Some(rest) = rest {
-                return match &m.backend {
-                    Backend::Embedded(fs) => Target::Embedded { fs, path: rest.to_string() },
-                    Backend::Proc => Target::Proc { path: rest.to_string() },
-                    Backend::Host { path, ro } => Target::Host { root: path, mount_guest: &m.guest, rel: rest.trim_start_matches('/').to_string(), ro: *ro },
-                };
-            }
+            rest.map(|r| (m, r))
+        })
+    }
+
+    /// The guest path of the mount `guest` falls in, before any symlink is resolved.
+    pub fn mount_point(&self, guest: &str) -> Option<&str> {
+        self.mount_for(guest).map(|(m, _)| m.guest.as_str())
+    }
+
+    fn locate(&self, guest: &str) -> Target<'_> {
+        if let Some((m, rest)) = self.mount_for(guest) {
+            return match &m.backend {
+                Backend::Embedded(fs) => Target::Embedded { fs, path: rest.to_string() },
+                Backend::Proc => Target::Proc { path: rest.to_string() },
+                Backend::Host { path, ro } => Target::Host { root: path, mount_guest: &m.guest, rel: rest.trim_start_matches('/').to_string(), ro: *ro },
+            };
         }
         let prefix = if guest == "/" { "/".to_string() } else { format!("{guest}/") };
         if self.mounts.iter().any(|m| m.guest.starts_with(&prefix)) {
@@ -252,9 +267,17 @@ impl Kernel {
         }
     }
 
-    /// Is the host path `p` inside a mount the guest can write to?
+    /// Is the host path `p` inside a mount the guest can write to? Not when the guest path that
+    /// mount gives it falls in another mount, mounted over that part of it (as /tmp/.ampoule is
+    /// over /tmp): the guest reaches the host path only through that guest path.
     pub fn guest_writable(&self, p: &Path) -> bool {
-        self.mounts.iter().any(|m| matches!(&m.backend, Backend::Host { path, ro: false } if p.starts_with(path)))
+        self.mounts.iter().any(|m| {
+            let Backend::Host { path, ro: false } = &m.backend else { return false };
+            let Ok(rel) = p.strip_prefix(path) else { return false };
+            let Some(rel) = rel.to_str() else { return true };
+            let guest = normalize(&format!("{}/{rel}", m.guest));
+            self.mount_point(&guest) == Some(m.guest.as_str())
+        })
     }
 
     /// Mount points directly below `guest`, which appear as directories in its listing.
@@ -440,6 +463,16 @@ mod tests {
         let root = dir.0.canonicalize().unwrap();
         assert!(k.guest_writable(&root.join("tmp/sub/file")));
         assert!(!k.guest_writable(&root.join("data/x")) && !k.guest_writable(&root.join("secret")));
+    }
+
+    #[test]
+    fn a_read_only_mount_over_part_of_a_writable_one_is_not_guest_writable() {
+        let (dir, mut k) = sandbox();
+        let root = dir.0.canonicalize().unwrap();
+        k.mounts.push(Mount { guest: "/tmp/sub".into(), backend: Backend::Host { path: root.join("tmp/sub"), ro: true } });
+        k.mounts.sort_by_key(|m| std::cmp::Reverse(m.guest.len()));
+        assert!(!k.guest_writable(&root.join("tmp/sub/file")) && k.guest_writable(&root.join("tmp/other")));
+        assert_eq!((k.mount_point("/tmp/sub/file"), k.mount_point("/tmp/subx")), (Some("/tmp/sub"), Some("/tmp")));
     }
 
     #[test]

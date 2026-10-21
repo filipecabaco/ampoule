@@ -10,6 +10,9 @@ defmodule Porter.CLI do
     # :os.cmd/1 runs a shell pipeline through /bin/sh.
     words = :os.cmd(~c"printf 'one two three' | wc -w") |> to_string() |> String.trim()
     IO.puts("words: " <> words)
+    # A program the app ships in its own priv/, which needs no [process] allow entry.
+    {greeting, 0} = Porter.Greeter.greet("ampoule")
+    IO.puts("priv: " <> String.trim(greeting))
     IO.puts("pid: #{System.pid()}")
   end
 end

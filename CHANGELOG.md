@@ -5,6 +5,53 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-21
+
+### Added
+
+- Programs the release ships in its own `priv/` directories run, by default without
+  `[process] allow`: `System.cmd(Path.join(:code.priv_dir(:my_app), "bin/tool"), args)` and
+  `{:spawn_executable, ...}` ports work as on a native release. The first start extracts the app's
+  whole `priv/` to the private `/tmp` (`.ampoule/priv/<app>-<vsn>/`, same layout and modes, once per
+  run) and runs the program on the host from there. `[process] priv = false` turns it off.
+- Packing keeps `.sh` scripts under `priv/`, and warns when an executable in an app's `priv/` is
+  built for another OS or CPU than the target (ELF and Mach-O, universal binaries included).
+- Erlang distribution. `--node NAME` (`RELEASE_NODE`, or `[distribution]` in `ampoule.toml`) starts
+  the app as a distributed node that clusters with other packed nodes and with native ones. By
+  default no epmd is needed: every node listens on one distribution port (9100) and reaches its
+  peers there, OTP's `-erl_epmd_port`; `epmd = "host"` registers with an epmd running on the host
+  instead. The cookie comes from `--cookie-file`, `RELEASE_COOKIE`, `cookie_file` or the release's
+  own, and is never printed. The distribution port is allowed by `--listen` and mapped by
+  `--port-map`; peers are reached through `--rewrite-connect` and `--deny-connect`. See
+  `examples/cluster`.
+- `remote` and `rpc EXPR` attach a shell to a running node, or evaluate an expression there, as a
+  release's `bin/<name> remote` and `rpc` do.
+
+### Changed
+
+- Packed binaries are about 11 MiB smaller (examples/francis: 24.6 MiB in 0.1.6, 13.4 MiB now).
+  They start from the lean runtime, `ampoule` built without the Cranelift compiler, which a packed
+  app never uses (8.4 MiB): releases ship it next to `ampoule` in the archive and as the bare
+  `ampoule-<target>`, and packing uses it when it sits next to `ampoule`, refusing one from another
+  release. The runtime is also stripped of symbols (2.8 MiB).
+- The app sees `/tmp/.ampoule`, the runtime's own files (the sys.config overlay, the source of
+  `/etc/hosts`, extracted `priv/` programs), read-only.
+- `vm.args` flags `-name`, `-sname` and `-setcookie` are still left out with a warning, which no
+  longer shows the cookie; `-hidden`, `-proto_dist`, `-epmd_module` and `-dist_listen` apply when
+  the node is distributed, and `-erl_epmd_port` sets its port.
+
+### Fixed
+
+- Memory the VM freed never went back to the host: after a spike the process's RSS stayed at its
+  peak until the VM stopped, since wasm memory cannot shrink and wasi-libc's `malloc` keeps what it
+  frees. ERTS's carriers now come from an allocator of whole wasm pages in the engine
+  (`engine/ampoule-os`), and the pages of a carrier ERTS releases are dropped on the host
+  (`madvise(MADV_DONTNEED)` on Linux, a fresh mapping on macOS) and reused for later carriers. After
+  holding and freeing 1 GiB of binaries, RSS goes back to about 115 MiB (idle: 94 MiB), where it
+  stayed at about 1.1 GiB, three spikes in a row (Apple M5 Pro). Carriers come from `erl_mseg`
+  again, so the `-M<A>mmmbc 0 -M<A>mmsbc 0` defaults from 0.1.1 are gone; the VM's address space
+  still stays at the size a spike reached, counted against `--memory-max`.
+
 ## [0.1.6] - 2026-10-20
 
 ### Added

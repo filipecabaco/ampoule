@@ -114,6 +114,27 @@ impl Mem {
         self.write(addr, &v.to_le_bytes())
     }
 
+    /// Give the host back the pages of `len` guest bytes at `addr`, which the guest no longer
+    /// uses: they stop counting in the process's RSS and read as zero when next touched. The
+    /// range must be page-aligned (wasm pages, which are whole host pages) and inside the memory.
+    ///
+    /// Linear memory can't shrink, so this is how memory the VM freed leaves the process: the
+    /// guest's segment allocator (`aos_pages_free` in engine/ampoule-os) calls it for every range
+    /// ERTS unmaps.
+    pub fn discard(&self, addr: u32, len: u32) -> R<()> {
+        const WASM_PAGE: u32 = 65536;
+        if !addr.is_multiple_of(WASM_PAGE) || !len.is_multiple_of(WASM_PAGE) {
+            return Err(errno::INVAL);
+        }
+        if len == 0 {
+            return Ok(());
+        }
+        let p = self.ptr(addr, len)?.cast::<std::ffi::c_void>();
+        // Wasm pages are a multiple of every host page size ampoule runs on (4K, 16K, 64K).
+        debug_assert!((p as usize).is_multiple_of(rustix::param::page_size()));
+        discard_pages(p, len as usize)
+    }
+
     /// Guest iovecs (`{ buf: u32, len: u32 }`) as host iovecs pointing into guest memory.
     pub fn iovecs(&self, iovs: u32, count: u32) -> R<Vec<libc::iovec>> {
         self.array(iovs, count, 8)?;
@@ -128,5 +149,95 @@ impl Mem {
             out.push(libc::iovec { iov_base: self.ptr(buf, len)? as *mut libc::c_void, iov_len: len as usize });
         }
         Ok(out)
+    }
+}
+
+/// `ampoule_os.discard(addr, len)`: the guest's segment allocator handing freed pages back
+/// (`Mem::discard`). 0, or -errno.
+pub fn add(linker: &mut wasmtime::Linker<crate::Ctx>) -> anyhow::Result<()> {
+    linker.func_wrap("ampoule_os", "discard", |c: wasmtime::Caller<'_, crate::Ctx>, addr: i32, len: i32| -> i32 {
+        crate::net::ret(crate::k(&c).mem.discard(addr as u32, len as u32).map(|()| 0))
+    })?;
+    Ok(())
+}
+
+/// Linux drops the pages of a private anonymous mapping on `MADV_DONTNEED`: the RSS falls at
+/// once and the next touch maps a zero page. The VMA is left whole.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn discard_pages(p: *mut std::ffi::c_void, len: usize) -> R<()> {
+    // SAFETY: `p..p + len` is page-aligned guest memory inside the shared memory's mapping
+    // (`Mem::discard` checked both). The guest has freed it, so no guest thread uses it, and the
+    // host holds no Rust references into guest memory (see the module doc). The advice only
+    // replaces the contents with zero pages; the mapping and its protection stay as they were.
+    unsafe { rustix::mm::madvise(p, len, rustix::mm::Advice::LinuxDontNeed) }.map_err(errno::rx)
+}
+
+/// macOS keeps anonymous pages resident after `MADV_DONTNEED`, and `MADV_FREE` only drops them
+/// under memory pressure. Mapping fresh anonymous memory over the range, with the protection it
+/// already has, frees the old pages at once; the next touch maps a zero page, as on Linux.
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn discard_pages(p: *mut std::ffi::c_void, len: usize) -> R<()> {
+    use rustix::mm::{MapFlags, ProtFlags};
+    // SAFETY: as for Linux's `discard_pages`: freed, page-aligned guest memory inside the shared
+    // memory's mapping, which wasmtime reserved private, anonymous and read-write up to its
+    // current size. MAP_FIXED replaces exactly that range with a mapping of the same kind, so the
+    // memory stays valid for every thread; only its contents are dropped.
+    let got = unsafe { rustix::mm::mmap_anonymous(p, len, ProtFlags::READ | ProtFlags::WRITE, MapFlags::PRIVATE | MapFlags::FIXED) }.map_err(errno::rx)?;
+    if got != p {
+        return Err(errno::FAULT);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PAGE: u32 = 65536;
+
+    fn mem(pages: u32) -> Mem {
+        let engine = wasmtime::Engine::new(&crate::engine::config()).unwrap();
+        Mem::new(SharedMemory::new(&engine, wasmtime::MemoryType::shared(pages, pages)).unwrap())
+    }
+
+    /// Host pages of `len` bytes at guest `addr` that are resident, from mincore(2).
+    fn resident(m: &Mem, addr: u32, len: u32) -> usize {
+        let host_page = rustix::param::page_size();
+        let mut vec = vec![0u8; len as usize / host_page];
+        // SAFETY: the range is page-aligned guest memory inside the mapping (the tests use
+        // whole wasm pages), and `vec` has one byte per host page in it.
+        let r = unsafe { libc::mincore(m.ptr(addr, len).unwrap().cast(), len as usize, vec.as_mut_ptr().cast()) };
+        assert_eq!(r, 0, "mincore: {}", std::io::Error::last_os_error());
+        vec.iter().filter(|&&b| b & 1 != 0).count()
+    }
+
+    #[test]
+    fn discard_zeroes_the_range_and_drops_its_pages() {
+        let m = mem(8);
+        let all = 8 * PAGE;
+        m.write(0, &vec![0xa5; all as usize]).unwrap();
+        let host_pages = all as usize / rustix::param::page_size();
+        assert_eq!(resident(&m, 0, all), host_pages);
+
+        m.discard(2 * PAGE, 4 * PAGE).unwrap();
+
+        assert_eq!(resident(&m, 2 * PAGE, 4 * PAGE), 0, "discarded pages still resident");
+        assert_eq!(resident(&m, 0, 2 * PAGE) + resident(&m, 6 * PAGE, 2 * PAGE), host_pages / 2);
+        assert!(m.read(2 * PAGE, 4 * PAGE).unwrap().iter().all(|&b| b == 0));
+        assert!(m.read(0, 2 * PAGE).unwrap().iter().all(|&b| b == 0xa5));
+        assert!(m.read(6 * PAGE, 2 * PAGE).unwrap().iter().all(|&b| b == 0xa5));
+        // The memory is still read-write.
+        m.write(3 * PAGE, b"again").unwrap();
+        assert_eq!(m.read(3 * PAGE, 5).unwrap(), b"again");
+    }
+
+    #[test]
+    fn discard_checks_the_range() {
+        let m = mem(4);
+        assert_eq!(m.discard(PAGE / 2, PAGE), Err(errno::INVAL));
+        assert_eq!(m.discard(0, PAGE + 1), Err(errno::INVAL));
+        assert_eq!(m.discard(3 * PAGE, 2 * PAGE), Err(errno::FAULT));
+        assert_eq!(m.discard(u32::MAX - PAGE + 1, PAGE), Err(errno::FAULT));
+        assert_eq!(m.discard(PAGE, 0), Ok(()));
     }
 }

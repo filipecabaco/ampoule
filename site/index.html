@@ -187,7 +187,7 @@ export PATH="$HOME/ampoule:$PATH"</code></pre>
 <span class="p">$</span> ampoule release
 <span class="o">==&gt; MIX_ENV=prod mix release --overwrite
 ==&gt; my_app 0.1.0: 1018 files, 11.6 MiB → 5.2 MiB image (32 paths pruned)
-_build/prod/ampoule/my_app-aarch64-darwin (26.3 MiB)
+_build/prod/ampoule/my_app-aarch64-darwin (13.4 MiB)
 ==&gt; packed in 0.3s; run `&lt;binary&gt; help` for its commands</span>
 
 <span class="p">$</span> _build/prod/ampoule/my_app-aarch64-darwin start
@@ -202,18 +202,20 @@ _build/prod/ampoule/my_app-aarch64-darwin (26.3 MiB)
         <div class="rule-col">
           <h3><svg class="rule-icon ok" aria-hidden="true"><use href="#ok"/></svg> Works</h3>
           <ul>
-            <li>Phoenix, Ecto, Francis, SQLite, plain OTP: <a href="https://github.com/filipecabaco/ampoule/tree/main/examples">six examples</a>, each with an end-to-end suite.</li>
+            <li>Phoenix, Ecto, Francis, SQLite, plain OTP: <a href="https://github.com/filipecabaco/ampoule/tree/main/examples">seven examples</a>, each with an end-to-end suite.</li>
             <li>NIFs in C, C++ or Rust, rebuilt for wasm when you pack. That needs <a href="https://github.com/WebAssembly/wasi-sdk/releases">wasi-sdk</a> 34, and Rust NIFs also need <code>rustup target add wasm32-wasip1-threads</code>.</li>
             <li>Host programs you allow: ports, <code>System.cmd/3</code> and <code>:os.cmd/1</code>, with exit statuses, <code>os_pid</code> and <code>{:packet, N}</code> as on a native release.</li>
+            <li>Programs shipped inside the release, in <code>priv/</code>, with no allow list: they are extracted on first use and run on the host.</li>
             <li>Unix domain sockets (<code>{:local, path}</code>) at the app’s own paths, host services included when you mount them in.</li>
+            <li>Erlang distribution with <code>--node my_app@10.0.0.5</code>: packed nodes cluster with each other and with native ones, on one known port or through the host’s epmd. <code>remote</code> and <code>rpc</code> reach a running node.</li>
             <li>Elixir and Erlang/OTP 28 on the machine that packs. Nothing on the machine that runs.</li>
           </ul>
         </div>
         <div class="rule-col">
           <h3><svg class="rule-icon no" aria-hidden="true"><use href="#no"/></svg> Does not work</h3>
           <ul>
-            <li>Programs shipped inside the release, in <code>priv/</code>: packing leaves them out.</li>
-            <li>Erlang distribution: the app runs as one node.</li>
+            <li>A program in <code>priv/</code> built for another OS or CPU than the target: it cannot start there, and packing warns about it.</li>
+            <li>Starting epmd: without one on the host, every node of a cluster listens on the same distribution port, one node per address.</li>
             <li>An OTP major other than 28: the engine runs ERTS 16.</li>
             <li>A NIF thread that calls <code>enif_thread_exit</code>: it ends without cleanup and joining it never returns. Return from the thread function instead.</li>
           </ul>
@@ -455,14 +457,14 @@ allow = ["uname", "/bin/sh"]</code></pre>
       <table>
         <caption class="visually-hidden">Specifications</caption>
         <tbody>
-          <tr><th scope="row">Binary size, examples/francis, macOS arm64</th><td>26.3 MiB</td></tr>
+          <tr><th scope="row">Binary size, examples/francis, macOS arm64</th><td>13.4 MiB</td></tr>
           <tr><th scope="row">Packing time, after <code>mix release</code></th><td>0.3 s</td></tr>
           <tr><th scope="row"><code>docker stop</code>, <code>FROM scratch</code> container</th><td>1 s, clean</td></tr>
           <tr><th scope="row">Supabase Realtime, its own end-to-end suite</th><td>53 / 53</td></tr>
-          <tr><th scope="row">The six examples' end-to-end suites</th><td>40 / 40</td></tr>
+          <tr><th scope="row">The seven examples' end-to-end suites</th><td>48 / 48</td></tr>
           <tr><th scope="row">Targets</th><td class="text">aarch64-darwin, x86_64-darwin, aarch64-linux, x86_64-linux</td></tr>
           <tr><th scope="row">Engine</th><td class="text">ERTS 16.4.0.4 from Erlang/OTP 28.5.0.4, <code>wasm32-wasip1-threads</code></td></tr>
-          <tr><th scope="row">Version</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/releases/latest">v0.1.6</a></td></tr>
+          <tr><th scope="row">Version</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/releases/latest">v0.1.7</a></td></tr>
           <tr><th scope="row">License</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/blob/main/LICENSE">Apache-2.0</a></td></tr>
         </tbody>
       </table>

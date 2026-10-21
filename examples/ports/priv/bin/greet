@@ -1,0 +1,11 @@
+#!/bin/sh
+# Shipped in the app's priv/: it runs without [process] allow. It finds its helper through its own
+# path, as programs often do; ampoule extracts the whole priv/ directory, so the helper is there.
+. "$(dirname "$0")/../lib/greeting.sh"
+
+case "$1" in
+  "") echo "usage: greet NAME | greet --lines" >&2; exit 2 ;;
+  # As a port program: one greeting per line read, until stdin closes.
+  --lines) while IFS= read -r name; do greeting "$name"; done ;;
+  *) greeting "$1" ;;
+esac

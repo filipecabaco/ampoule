@@ -192,6 +192,8 @@ pub struct Stats {
     pub bytes: u64,
     pub dropped: usize,
     pub foreign_native: BTreeSet<String>,
+    /// Executables in an app's priv/ (OTP's own left out), by path, with what they were built for.
+    pub programs: Vec<(String, crate::shipped::Program)>,
 }
 
 struct Entry {
@@ -247,6 +249,11 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<Entry>, stats: &mut Stats) -> Res
                     data = stripped;
                 }
             }
+            if lib_entry(&path).is_some_and(|(app, rel)| rel.starts_with("priv/") && !OTP_APPS.contains(&app)) {
+                if let Some(program) = crate::shipped::Program::detect(&data) {
+                    stats.programs.push((path.clone(), program));
+                }
+            }
             out.push(Entry { path, kind: crate::vfs::KIND_FILE, mode: md.mode(), data });
         }
     }
@@ -276,7 +283,8 @@ fn dropped(parent: &str, path: &str, name: &str, ext: &str, is_dir: bool) -> boo
     if parent.starts_with("/erts-") {
         return true;
     }
-    DROPPED_EXTS.contains(&ext)
+    // Scripts in an app's priv/ are programs it runs (see `shipped`).
+    DROPPED_EXTS.contains(&ext) && !(ext == "sh" && lib_entry(path).is_some_and(|(_, rel)| rel.starts_with("priv/")))
 }
 
 /// Drop debug info, docs and type-checker chunks from a .beam ("FOR1" IFF container).
@@ -367,6 +375,26 @@ mod tests {
     #[test]
     fn dropped_prunes_sources_but_not_ebin() {
         assert_eq!((dropped("/lib/x-1", "/lib/x-1/src", "src", "", true), dropped("/lib/x-1", "/lib/x-1/ebin", "ebin", "", true)), (true, false));
+    }
+
+    #[test]
+    fn shell_scripts_are_dropped_except_in_priv() {
+        assert!(dropped("/lib/x-1/bin", "/lib/x-1/bin/run.sh", "run.sh", "sh", false));
+        assert!(!dropped("/lib/x-1/priv/bin", "/lib/x-1/priv/bin/run.sh", "run.sh", "sh", false));
+        assert!(dropped("/lib/x-1/priv", "/lib/x-1/priv/app.js.map", "app.js.map", "map", false));
+    }
+
+    #[test]
+    fn rootfs_lists_native_programs_in_priv_but_not_otps() {
+        let dir = crate::TestDir::new("programs");
+        for app in ["app-1", "os_mon-2.11"] {
+            std::fs::create_dir_all(dir.0.join(format!("lib/{app}/priv/bin"))).unwrap();
+            std::fs::write(dir.0.join(format!("lib/{app}/priv/bin/tool")), b"\x7fELF\x02\x01\x01\0\0\0\0\0\0\0\0\0\x02\0\x3e\0").unwrap();
+        }
+        std::fs::write(dir.0.join("lib/app-1/priv/bin/script"), b"#!/bin/sh\n").unwrap();
+        let (_, stats) = build_rootfs(&dir.0).unwrap();
+        let paths: Vec<&str> = stats.programs.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(paths, vec!["/lib/app-1/priv/bin/tool"]);
     }
 
     #[test]

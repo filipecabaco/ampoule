@@ -1,0 +1,6 @@
+# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+
+[distribution]
+mode = "name"   # long names, roster@10.0.0.5; give each node its own with --node or RELEASE_NODE
+port = 9100     # every node listens here and reaches its peers here
+epmd = "none"   # no epmd: the port is fixed, so nothing has to look it up

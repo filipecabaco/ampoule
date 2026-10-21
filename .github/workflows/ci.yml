@@ -52,14 +52,21 @@ jobs:
         run: |
           cargo fmt --check
           cargo clippy --all-targets -- -D warnings
+          cargo clippy --all-targets --no-default-features --target-dir target/lean -- -D warnings
 
       - name: Unit tests
         working-directory: runner
         run: cargo test
 
+      # The lean runtime (no Cranelift) goes next to ampoule, as in a release, so the smoke test and
+      # every example pack on it.
       - name: Build
         working-directory: runner
-        run: cargo build --release
+        run: |
+          cargo build --release
+          cargo build --release --no-default-features --target-dir target/lean
+          target=$(target/release/ampoule version | sed -E 's/.*\(([a-z0-9_]+-[a-z]+),.*/\1/')
+          cp target/lean/release/ampoule "target/release/ampoule-$target"
 
       - name: Fetch wasi-sdk (to build NIFs at pack time)
         run: elixir scripts/engine.exs sdk
@@ -70,7 +77,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: ampoule-${{ matrix.os }}
-          path: runner/target/release/ampoule
+          path: runner/target/release/ampoule*
           if-no-files-found: error
 
   # Each example's end-to-end suite (examples/*/test/e2e) against the binary the test job built:
@@ -81,7 +88,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
-        example: [c_nif, francis, phoenix_ecto, ports, rustler, sqlite]
+        example: [c_nif, cluster, francis, phoenix_ecto, ports, rustler, sqlite]
         exclude:
           # Needs Postgres, and macOS runners cannot run service containers.
           - os: macos-15
@@ -110,8 +117,8 @@ jobs:
           name: ampoule-${{ matrix.os }}
           path: runner/target/release
 
-      - name: Make the binary executable
-        run: chmod +x runner/target/release/ampoule
+      - name: Make the binaries executable
+        run: chmod +x runner/target/release/ampoule*
 
       - uses: dtolnay/rust-toolchain@v1
         if: matrix.example == 'rustler'
