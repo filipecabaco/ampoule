@@ -25,6 +25,13 @@
 //! [process]
 //! allow = ["git", "/bin/sh"]       # host programs the app may start ("*": everything on PATH)
 //! priv = false                     # programs in the release's own priv/ may not run (default: they may)
+//!
+//! [distribution]                   # Erlang distribution for `start` (default: off)
+//! mode = "name"                    # "name", "sname" or "none"
+//! node = "my_app@10.0.0.5"         # default: the release name
+//! port = 9100                      # the distribution port (default: 9100 without epmd)
+//! epmd = "none"                    # "none": every node on `port`; "host": the host's epmd
+//! cookie_file = "/run/secrets/erlang-cookie"
 //! ```
 
 use std::collections::BTreeMap;
@@ -98,6 +105,25 @@ impl Process {
     }
 }
 
+/// `[distribution]`: see `dist`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Distribution {
+    /// "name", "sname" or "none" (RELEASE_DISTRIBUTION); unset: on when `node` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// "none" or "host".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epmd: Option<String>,
+    /// A host file holding the cookie, read when the binary runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cookie_file: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StartConfig {
@@ -120,6 +146,8 @@ pub struct Config {
     pub network: Network,
     #[serde(default)]
     pub process: Process,
+    #[serde(default)]
+    pub distribution: Distribution,
     /// VM flags written as in vm.args, applied after the release's vm.args.
     #[serde(default)]
     pub vm_args: String,
@@ -144,6 +172,7 @@ impl Config {
             }
         }
         Process::check(&cfg.process.allow).with_context(|| format!("{}: [process]", path.display()))?;
+        crate::dist::Opts::from_config(&cfg.distribution).with_context(|| format!("{}: [distribution]", path.display()))?;
         if let Some(d) = &cfg.idle_stop {
             crate::idle::parse_duration(d).with_context(|| format!("{}: idle_stop", path.display()))?;
         }
@@ -165,7 +194,7 @@ impl Config {
     }
 }
 
-pub const BUILTIN_COMMANDS: &[&str] = &["start", "serve", "eval", "vm", "info", "help"];
+pub const BUILTIN_COMMANDS: &[&str] = &["start", "serve", "eval", "remote", "rpc", "vm", "info", "help"];
 
 /// `restart`: true for "on-failure", false for "off" or "no".
 pub fn parse_restart(s: &str) -> Result<bool> {
@@ -230,6 +259,9 @@ pub struct Manifest {
     /// `[process]` from ampoule.toml.
     #[serde(default)]
     pub process: Process,
+    /// `[distribution]` from ampoule.toml.
+    #[serde(default)]
+    pub distribution: Distribution,
     /// NIFs linked into the payload's engine (by library name).
     #[serde(default)]
     pub nifs: Vec<String>,
@@ -264,6 +296,7 @@ impl Manifest {
             start_env: cfg.start.env,
             network: cfg.network,
             process: cfg.process,
+            distribution: cfg.distribution,
             nifs: Vec::new(),
             vm_args: cfg.vm_args,
             idle_stop: cfg.idle_stop,
@@ -369,6 +402,24 @@ mod tests {
     #[test]
     fn config_rejects_a_memory_alarm_above_100() {
         assert!(load("memory_alarm = 150\n").is_err() && load("memory_alarm = 75\nrestart = \"on-failure\"\n").is_ok());
+    }
+
+    #[test]
+    fn config_reads_distribution() {
+        let cfg = load("[distribution]\nnode = \"app@10.0.0.5\"\nport = 9200\nepmd = \"host\"\ncookie_file = \"/run/secrets/cookie\"\n").unwrap();
+        let d = cfg.distribution;
+        assert_eq!(
+            (d.node.as_deref(), d.port, d.epmd.as_deref(), d.cookie_file.as_deref()),
+            (Some("app@10.0.0.5"), Some(9200), Some("host"), Some("/run/secrets/cookie"))
+        );
+    }
+
+    #[test]
+    fn config_rejects_bad_distribution_values() {
+        assert!(load("[distribution]\nmode = \"long\"\n").is_err());
+        assert!(load("[distribution]\nepmd = \"local\"\n").is_err());
+        assert!(load("[distribution]\ncookie = \"secret\"\n").is_err());
+        assert!(load("[distribution]\nmode = \"sname\"\nnode = \"app@10.0.0.5\"\n").is_err());
     }
 
     #[test]

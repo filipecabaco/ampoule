@@ -1,9 +1,9 @@
 //! `-args_file`, applied the way erlexec applies it. The runtime starts beam directly, without
 //! erlexec, so this is what reads a release's vm.args: `+` flags become emulator flags, `-env`
 //! sets an environment variable, `-extra` starts plain arguments and everything else stays an
-//! init argument where `-args_file` was. Distribution and host-process flags are dropped: the app
-//! runs as one node and cannot start host programs. Splitting and the table of flags that take a
-//! value follow erts/etc/common/erlexec.c.
+//! init argument where `-args_file` was. Distribution flags are set apart for `dist` to apply or
+//! leave out, and `-detached` and `-heart` are dropped. Splitting and the table of flags that take
+//! a value follow erts/etc/common/erlexec.c.
 
 use anyhow::{bail, Result};
 
@@ -16,6 +16,8 @@ pub struct Expanded {
     /// Plain arguments from a file's `-extra`, for the end of the command line.
     pub extra: Vec<String>,
     pub env: Vec<(String, String)>,
+    /// Distribution flags (`-name`, `-setcookie`, `-erl_epmd_port`, ...) with their values.
+    pub dist: Vec<(String, Option<String>)>,
     /// Flags left out, for a warning.
     pub dropped: Vec<String>,
 }
@@ -81,12 +83,16 @@ fn apply(file: &str, text: &str, read: &mut dyn FnMut(&str) -> Result<Option<Str
                 out.env.push((v[0].clone(), v[1].clone()));
                 i += 3;
             },
-            "-name" | "-sname" | "-setcookie" | "-proto_dist" | "-start_epmd" | "-epmd_module" | "-epmd" => {
+            "-name" | "-sname" | "-setcookie" | "-proto_dist" | "-start_epmd" | "-epmd_module" | "-epmd" | "-erl_epmd_port" | "-dist_listen" => {
                 let v = take(1, "a value")?;
-                out.dropped.push(format!("{w} {}", v[0]));
+                out.dist.push((w.clone(), Some(v[0].clone())));
                 i += 2;
             },
-            "-hidden" | "-no_epmd" | "-detached" | "-heart" => {
+            "-hidden" | "-no_epmd" => {
+                out.dist.push((w.clone(), None));
+                i += 1;
+            },
+            "-detached" | "-heart" => {
                 out.dropped.push(w.clone());
                 i += 1;
             },
@@ -292,10 +298,22 @@ mod tests {
     }
 
     #[test]
-    fn distribution_flags_are_dropped() {
-        let e = run(&["-args_file", "vm"], &[("vm", "-name app@127.0.0.1 -setcookie secret -hidden -kernel a b")]).unwrap();
-        assert_eq!(e.dropped, s(&["-name app@127.0.0.1", "-setcookie secret", "-hidden"]));
-        assert_eq!(e.erl, s(&["-kernel", "a", "b"]));
+    fn distribution_flags_are_set_apart() {
+        let e =
+            run(&["-args_file", "vm"], &[("vm", "-name app@127.0.0.1 -setcookie secret -hidden -start_epmd false -erl_epmd_port 6789 -detached -kernel a b")])
+                .unwrap();
+        let some = |v: &str| Some(v.to_string());
+        assert_eq!(
+            e.dist,
+            vec![
+                ("-name".to_string(), some("app@127.0.0.1")),
+                ("-setcookie".to_string(), some("secret")),
+                ("-hidden".to_string(), None),
+                ("-start_epmd".to_string(), some("false")),
+                ("-erl_epmd_port".to_string(), some("6789"))
+            ]
+        );
+        assert_eq!((e.dropped, e.erl), (s(&["-detached"]), s(&["-kernel", "a", "b"])));
     }
 
     #[test]

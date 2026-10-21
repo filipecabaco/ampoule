@@ -101,6 +101,7 @@ and `SHA256SUMS`.
 | `nif.rs` | rebuilding NIFs for wasm (Mix and cargo) and relinking the engine |
 | `toolchain.rs` | wasi-sdk and kit discovery, and the `ampoule-cc`/`c++` compiler wrapper |
 | `config.rs` | `ampoule.toml` and the embedded manifest |
+| `dist.rs` | Erlang distribution: node name, cookie, epmd or a fixed port, and the `remote`/`rpc` client |
 | `engine.rs` | wasmtime configuration, shared with `build.rs` |
 | `kernel.rs` | fd table, mount table, path resolution |
 | `wasi.rs` | `wasi_snapshot_preview1` |

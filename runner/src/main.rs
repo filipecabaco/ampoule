@@ -9,6 +9,7 @@
 
 mod cache;
 mod config;
+mod dist;
 mod engine;
 mod errno;
 mod fds;
@@ -402,6 +403,9 @@ struct RunOpts {
     hosts: Vec<(String, String)>,
     policy: policy::Policy,
     allow_exec: Vec<String>,
+    dist: dist::Opts,
+    /// Whether the VM runs distributed, and as what (`start`; `remote`, `rpc`).
+    role: Option<dist::Role>,
 }
 
 fn app_usage(m: &Manifest) -> ! {
@@ -421,6 +425,8 @@ fn app_usage(m: &Manifest) -> ! {
          \n  start                  start the release\
          \n  serve                  {}\
          \n  eval EXPR              evaluate an expression on a non-booted release\
+         \n  remote                 a shell on the running node (needs distribution)\
+         \n  rpc EXPR               evaluate an expression on the running node (needs distribution)\
          \n  vm -- ERL_ARGS         run the VM with raw erl arguments (release at {APP})\
          \n  info                   what is packed{custom}\
          \n\noptions (or AMPOULE_* environment variables):\
@@ -439,6 +445,11 @@ fn app_usage(m: &Manifest) -> ! {
          \n  --restart MODE         AMPOULE_RESTART      with `start`, on-failure: start the VM again when it fails (a crash, out of memory); off (default)\
          \n  --memory-alarm PCT     AMPOULE_MEMORY_ALARM with `start`, set the system_memory_high_watermark alarm at PCT% of the memory limit (default: 80; 0: off)\
          \n  --stop-timeout SECS    AMPOULE_STOP_TIMEOUT how long SIGTERM/SIGINT wait for a clean stop (default: 30)\
+         \n  --node NAME            RELEASE_NODE         run `start` as a distributed node: NAME or NAME@HOST\
+         \n  --distribution MODE    RELEASE_DISTRIBUTION name, sname or none (default: none, or from --node)\
+         \n  --dist-port PORT       AMPOULE_DIST_PORT    the distribution port; without epmd, every node's (default: 9100)\
+         \n  --epmd MODE            AMPOULE_EPMD         none: find peers on the distribution port (default); host: the host's epmd\
+         \n  --cookie-file FILE     AMPOULE_COOKIE_FILE  the cookie (default: RELEASE_COOKIE, else the release's)\
          \n  --tmp DIR              AMPOULE_TMP          host directory behind /tmp\
          \n                         AMPOULE_CA_BUNDLE    CA certificates file (default: the host's)\
          \n  --env KEY=VALUE                               set an app environment variable",
@@ -470,6 +481,9 @@ fn list(v: &str) -> impl Iterator<Item = &str> {
 
 /// Apply one option, from a flag or its AMPOULE_* variable.
 fn apply_opt(o: &mut RunOpts, key: &str, v: &str) -> Result<()> {
+    if o.dist.apply(key, v)? {
+        return Ok(());
+    }
     match key {
         "listen" => o.policy.listen = list(v).map(|p| p.parse().with_context(|| format!("bad port {p}"))).collect::<Result<_>>()?,
         "port-map" => {
@@ -554,6 +568,11 @@ const ENV_OPTS: &[(&str, &str)] = &[
     ("AMPOULE_MEMORY_ALARM", "memory-alarm"),
     ("AMPOULE_STOP_TIMEOUT", "stop-timeout"),
     ("AMPOULE_TMP", "tmp"),
+    ("RELEASE_DISTRIBUTION", "distribution"),
+    ("RELEASE_NODE", "node"),
+    ("AMPOULE_DIST_PORT", "dist-port"),
+    ("AMPOULE_EPMD", "epmd"),
+    ("AMPOULE_COOKIE_FILE", "cookie-file"),
 ];
 
 fn app_main(app: App, args: &[String]) -> Result<()> {
@@ -561,6 +580,7 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
     let mut o = RunOpts::default();
     o.policy.listen = m.network.listen.clone();
     o.allow_exec = m.process.allow.clone();
+    o.dist = dist::Opts::from_config(&m.distribution)?;
     for (g, h) in &m.network.port_map {
         o.policy.port_map.push((g.parse().with_context(|| format!("bad port {g} in [network] port_map"))?, *h));
     }
@@ -584,13 +604,14 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         }
     };
     let rest = &args[i + 1..];
+    o.dist.check()?;
     o.policy.exec = spawn::Exec::resolve(&o.allow_exec, &std::env::var("PATH").unwrap_or_default());
 
     let eval = |expr: &str| -> Vec<String> {
         if m.elixir {
-            release_args(m, "start_clean", &["-extra", "--eval", expr, "--"])
+            release_args(m, "start_clean", "vm.args", &["-extra", "--eval", expr, "--"])
         } else {
-            release_args(m, "start_clean", &["-eval", expr, "-s", "init", "stop"])
+            release_args(m, "start_clean", "vm.args", &["-eval", expr, "-s", "init", "stop"])
         }
     };
     let (erl_args, defaults): (Vec<String>, BTreeMap<String, String>) = match cmd {
@@ -603,14 +624,27 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         },
         "start" => {
             let tail: &[&str] = if m.elixir { &["-mode", "embedded", "-extra", "--no-halt"] } else { &["-mode", "embedded"] };
-            let mut a = release_args(m, "start", tail);
+            let mut a = release_args(m, "start", "vm.args", tail);
             let pct = o.memory_alarm.or(m.memory_alarm).unwrap_or(config::MEMORY_ALARM);
             if pct > 0 {
                 // An init flag, so before -extra; init evaluates it once the release has booted.
                 let at = a.iter().position(|x| x == "-extra").unwrap_or(a.len());
                 a.splice(at..at, ["-eval".to_string(), config::memory_alarm_eval(pct)]);
             }
+            o.role = Some(dist::Role::Node);
             (a, m.start_env.clone())
+        },
+        "remote" | "rpc" => {
+            let d = o
+                .dist
+                .resolve(&m.name)
+                .with_context(|| format!("`{cmd}` connects to a distributed node: set --node or --distribution (or [distribution] in ampoule.toml)"))?;
+            let expr = match cmd {
+                "rpc" => Some(rest.first().context("rpc needs an expression")?.as_str()),
+                _ => None,
+            };
+            o.role = Some(dist::Role::Client(if cmd == "rpc" { "rpc" } else { "rem" }));
+            (client_args(m, &d.target(&dist::hostname()), expr), BTreeMap::new())
         },
         "eval" => (eval(rest.first().context("eval needs an expression")?), BTreeMap::new()),
         "vm" => {
@@ -653,9 +687,10 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
     std::process::exit(run_vm(&app, &o, erl_args, defaults)?)
 }
 
-/// The erl arguments the release's own start script would pass, minus distribution (the wasm
-/// runtime runs one node), plus the overlay the runtime writes to /tmp/.ampoule.
-fn release_args(m: &Manifest, boot: &str, tail: &[&str]) -> Vec<String> {
+/// The erl arguments the release's own start script would pass, plus the overlay the runtime
+/// writes to /tmp/.ampoule. Distribution is added by `run_vm` (see `dist`); `vm_args` is the
+/// release's args file (`vm.args`, or `remote.vm.args` for `remote` and `rpc`).
+fn release_args(m: &Manifest, boot: &str, vm_args: &str, tail: &[&str]) -> Vec<String> {
     let vsn_dir = format!("{APP}/releases/{}", m.vsn);
     let mut a: Vec<String> = vec!["-noshell".into()];
     if m.elixir {
@@ -675,11 +710,45 @@ fn release_args(m: &Manifest, boot: &str, tail: &[&str]) -> Vec<String> {
         "RELEASE_LIB".into(),
         format!("{APP}/lib"),
         "-args_file".into(),
-        format!("{vsn_dir}/vm.args"),
+        format!("{vsn_dir}/{vm_args}"),
     ]);
     a.extend(tail.iter().map(|s| s.to_string()));
     a
 }
+
+/// `remote` (`expr` None) and `rpc`, as the release's own script runs them: a shell attached to
+/// `target` (IEx's `--remsh`, erl's `-remsh`), or one expression evaluated there and printed.
+fn client_args(m: &Manifest, target: &str, expr: Option<&str>) -> Vec<String> {
+    let mut a = release_args(m, "start_clean", "remote.vm.args", &[]);
+    match (expr, m.elixir) {
+        (Some(expr), true) => a.extend(["-extra", "--rpc-eval", target, expr].map(String::from)),
+        (Some(expr), false) => {
+            // Plain arguments rather than a string in the code, so the expression needs no quoting.
+            a.extend(["-eval".to_string(), ERL_RPC_EVAL.to_string(), "-s".into(), "init".into(), "stop".into(), "-extra".into(), target.into(), expr.into()])
+        },
+        (None, true) => {
+            // iex runs `elixir --erl "-user elixir" +iex`: IEx starts as the user process instead of
+            // `elixir start_cli`.
+            if let Some(at) = a.windows(3).position(|w| w == ["-s", "elixir", "start_cli"]) {
+                a.splice(at..at + 3, ["-user".to_string(), "elixir".to_string()]);
+            }
+            a.extend(["-extra", "--no-halt", "+iex", "--remsh", target].map(String::from));
+        },
+        (None, false) => {
+            a.retain(|x| x != "-noshell");
+            a.extend(["-remsh".to_string(), target.to_string()]);
+        },
+    }
+    a
+}
+
+/// `rpc` for a release without Elixir: the node and the expression come as plain arguments.
+const ERL_RPC_EVAL: &str = r#"[Node, Expr] = init:get_plain_arguments(),
+Src = case lists:reverse(string:trim(Expr)) of [$. | _] -> Expr; _ -> Expr ++ "." end,
+{ok, Tokens, _} = erl_scan:string(Src),
+{ok, Exprs} = erl_parse:parse_exprs(Tokens),
+{value, Value, _} = erpc:call(list_to_atom(Node), erl_eval, exprs, [Exprs, []]),
+io:format("~p~n", [Value])."#;
 
 /// Run each serve step as its own VM (a guest exit ends the whole runtime process); the last
 /// step replaces this process.
@@ -720,6 +789,14 @@ fn info(app: &App) -> Result<()> {
     println!("network:   listen {listen}");
     if !m.process.allow.is_empty() {
         println!("processes: {}", m.process.allow.join(", "));
+    }
+    if let Some(d) = dist::Opts::from_config(&m.distribution)?.resolve(&m.name) {
+        let port = match (d.epmd, d.listen_port()) {
+            (dist::Epmd::None, Some(p)) => format!("port {p}, no epmd"),
+            (_, Some(p)) => format!("port {p}, the host's epmd"),
+            (_, None) => "the host's epmd".into(),
+        };
+        println!("dist:      {} {} ({port})", if d.long { "-name" } else { "-sname" }, d.node);
     }
     Ok(())
 }
@@ -857,6 +934,62 @@ fn write_overlay(tmp: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Distribution for the command (see `dist`): its init arguments go into `vm` before `-extra`, the
+/// distribution port into the policy's `listen`, and the host's own name into `hosts`. Returns
+/// the environment the node sees. Without distribution, vm.args' distribution flags are left out.
+fn distribution(
+    o: &RunOpts,
+    m: &Manifest,
+    app: &Backend,
+    vm: &mut vmargs::Expanded,
+    policy: &mut policy::Policy,
+    hosts: &mut Vec<(String, String)>,
+) -> Result<Vec<(String, String)>> {
+    let (role, mut d) = match (o.role, o.dist.resolve(&m.name)) {
+        (Some(role), Some(d)) => (role, d),
+        // Configured, but this command runs on its own (eval, a custom command, vm).
+        (None, Some(_)) => return Ok(Vec::new()),
+        (_, None) => {
+            if !vm.dist.is_empty() {
+                let flags: Vec<String> = vm.dist.iter().map(|(f, v)| dist::shown(f, v.as_deref())).collect();
+                eprintln!("ampoule: ignoring VM flags {} (distribution is off; see --node)", flags.join(", "));
+            }
+            return Ok(Vec::new());
+        },
+    };
+    let from_vm = dist::from_vm_args(&vm.dist);
+    if d.port.is_none() && d.epmd == dist::Epmd::None {
+        d.port = from_vm.port;
+    }
+    if !from_vm.ignored.is_empty() {
+        eprintln!("ampoule: ignoring VM flags {} (the node is set by the distribution options)", from_vm.ignored.join(", "));
+    }
+    let release_cookie = read_app_file(app, &format!("{APP}/releases/COOKIE"))?;
+    let (cookie, source) = d.cookie(std::env::var("RELEASE_COOKIE").ok(), release_cookie)?;
+    if trace() {
+        eprintln!("ampoule: distribution as {} with the cookie from {source}", d.node);
+    }
+    let mut args = d.args(role, &cookie, std::env::var("ERL_EPMD_PORT").ok().as_deref());
+    args.extend(from_vm.keep);
+    let at = vm.erl.iter().position(|a| a == "-extra").unwrap_or(vm.erl.len());
+    vm.erl.splice(at..at, args);
+
+    if let (dist::Role::Node, Some(port)) = (role, d.listen_port()) {
+        if !policy.listen.is_empty() && !policy.listen.contains(&port) {
+            policy.listen.push(port);
+        }
+        if d.epmd == dist::Epmd::Host && policy.port_map.iter().any(|(g, _)| *g == port) {
+            bail!("--port-map cannot map the distribution port {port} with epmd = host: epmd would give peers the app's port");
+        }
+    }
+    let known = std::fs::read_to_string("/etc/hosts").unwrap_or_default() + &hosts.iter().map(|(name, ip)| format!("{ip} {name}\n")).collect::<String>();
+    hosts.extend(dist::self_hosts(&dist::hostname(), &known));
+    Ok(match role {
+        dist::Role::Node => vec![("RELEASE_NODE".into(), d.node.clone()), ("RELEASE_DISTRIBUTION".into(), if d.long { "name" } else { "sname" }.into())],
+        dist::Role::Client(_) => Vec::new(),
+    })
+}
+
 /// The host's CA certificates (AMPOULE_CA_BUNDLE, or the usual Linux/macOS locations), served
 /// where OTP's public_key looks on Linux.
 fn ca_bundle() -> Option<PathBuf> {
@@ -911,7 +1044,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     let at = vm.erl.iter().position(|a| a == "-extra").unwrap_or(vm.erl.len());
     vm.erl.splice(at..at, added);
     if !vm.dropped.is_empty() {
-        eprintln!("ampoule: ignoring VM flags {} (the app runs as one node)", vm.dropped.join(", "));
+        eprintln!("ampoule: ignoring VM flags {}", vm.dropped.join(", "));
     }
     // Programs from the release's priv/ are extracted below /tmp/.ampoule (see `shipped`), fresh
     // for each run.
@@ -922,13 +1055,15 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
         std::fs::create_dir(&dir).with_context(|| format!("creating {}", dir.display()))?;
         policy.exec.priv_dir = Some(dir);
     }
+    let mut hosts = o.hosts.clone();
+    let dist_env = distribution(o, m, &app_backend, &mut vm, &mut policy, &mut hosts)?;
     let mut mounts = vec![
         Mount { guest: APP.into(), backend: app_backend },
         Mount { guest: "/tmp".into(), backend: Backend::Host { path: tmp.clone(), ro: false } },
         // The runtime's own files, read-only to the app: the overlay, /etc/hosts' source, the
         // extracted priv/ programs it runs.
         Mount { guest: "/tmp/.ampoule".into(), backend: Backend::Host { path: tmp.join(".ampoule"), ro: true } },
-        Mount { guest: "/etc/hosts".into(), backend: Backend::Host { path: kernel::hosts_file(&tmp.join(".ampoule"), &o.hosts)?, ro: true } },
+        Mount { guest: "/etc/hosts".into(), backend: Backend::Host { path: kernel::hosts_file(&tmp.join(".ampoule"), &hosts)?, ro: true } },
         Mount { guest: "/dev/null".into(), backend: Backend::Host { path: "/dev/null".into(), ro: false } },
         Mount { guest: "/proc".into(), backend: Backend::Proc },
     ];
@@ -991,6 +1126,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     ] {
         env.insert(k.to_string(), v);
     }
+    env.extend(dist_env);
     env.extend(o.env.iter().cloned());
 
     let kernel = Arc::new(Kernel::new(Mem::new(memory.clone()), argv, env.into_iter().collect(), mounts, policy));
@@ -1066,7 +1202,23 @@ mod tests {
     #[test]
     fn release_args_boot_the_release_with_the_overlay() {
         let rel = ReleaseInfo { name: "app".into(), vsn: "0.1.0".into(), erts_vsn: "16.4".into(), elixir: false };
-        let a = release_args(&Manifest::new(&rel, Config::default()), "start", &[]);
+        let a = release_args(&Manifest::new(&rel, Config::default()), "start", "vm.args", &[]);
         assert!(a.windows(2).any(|w| w == ["-boot", "/app/releases/0.1.0/start"]) && a.contains(&"/tmp/.ampoule/overlay".to_string()));
+    }
+
+    #[test]
+    fn client_args_run_rpc_and_remote_as_the_release_scripts_do() {
+        let rel = ReleaseInfo { name: "app".into(), vsn: "0.1.0".into(), erts_vsn: "16.4".into(), elixir: true };
+        let m = Manifest::new(&rel, Config::default());
+        let rpc = client_args(&m, "app@h", Some("IO.puts(1)"));
+        assert!(rpc.ends_with(&["-extra", "--rpc-eval", "app@h", "IO.puts(1)"].map(String::from)));
+        assert!(rpc.windows(3).any(|w| w == ["-s", "elixir", "start_cli"]) && rpc.contains(&"/app/releases/0.1.0/remote.vm.args".to_string()));
+        let remote = client_args(&m, "app@h", None);
+        assert!(remote.ends_with(&["-extra", "--no-halt", "+iex", "--remsh", "app@h"].map(String::from)));
+        assert!(remote.windows(2).any(|w| w == ["-user", "elixir"]) && !remote.contains(&"start_cli".to_string()));
+        let erl = Manifest::new(&ReleaseInfo { elixir: false, ..rel }, Config::default());
+        let remote = client_args(&erl, "app@h", None);
+        assert!(remote.ends_with(&["-remsh", "app@h"].map(String::from)) && !remote.contains(&"-noshell".to_string()));
+        assert!(client_args(&erl, "app@h", Some("1 + 1")).ends_with(&["-extra", "app@h", "1 + 1"].map(String::from)));
     }
 }

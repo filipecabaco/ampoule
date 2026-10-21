@@ -14,11 +14,24 @@ and versions follow [Semantic Versioning](https://semver.org/).
   run) and runs the program on the host from there. `[process] priv = false` turns it off.
 - Packing keeps `.sh` scripts under `priv/`, and warns when an executable in an app's `priv/` is
   built for another OS or CPU than the target (ELF and Mach-O, universal binaries included).
+- Erlang distribution. `--node NAME` (`RELEASE_NODE`, or `[distribution]` in `ampoule.toml`) starts
+  the app as a distributed node that clusters with other packed nodes and with native ones. By
+  default no epmd is needed: every node listens on one distribution port (9100) and reaches its
+  peers there, OTP's `-erl_epmd_port`; `epmd = "host"` registers with an epmd running on the host
+  instead. The cookie comes from `--cookie-file`, `RELEASE_COOKIE`, `cookie_file` or the release's
+  own, and is never printed. The distribution port is allowed by `--listen` and mapped by
+  `--port-map`; peers are reached through `--rewrite-connect` and `--deny-connect`. See
+  `examples/cluster`.
+- `remote` and `rpc EXPR` attach a shell to a running node, or evaluate an expression there, as a
+  release's `bin/<name> remote` and `rpc` do.
 
 ### Changed
 
 - The app sees `/tmp/.ampoule`, the runtime's own files (the sys.config overlay, the source of
   `/etc/hosts`, extracted `priv/` programs), read-only.
+- `vm.args` flags `-name`, `-sname` and `-setcookie` are still left out with a warning, which no
+  longer shows the cookie; `-hidden`, `-proto_dist`, `-epmd_module` and `-dist_listen` apply when
+  the node is distributed, and `-erl_epmd_port` sets its port.
 
 ## [0.1.6] - 2026-10-20
 

@@ -116,6 +116,7 @@ runs the binary and tests it from the outside:
 |---|---|
 | [`phoenix_ecto`](examples/phoenix_ecto) | Phoenix JSON API on Ecto and Postgres; `serve` creates and migrates the database, then starts |
 | [`c_nif`](examples/c_nif) | the project's own C NIF in `c_src/`, built by `elixir_make` |
+| [`cluster`](examples/cluster) | Erlang distribution without epmd: nodes from one binary find each other; `rpc` and `remote` |
 | [`francis`](examples/francis) | Francis: HTML, JSON, server-sent events, the network policy |
 | [`ports`](examples/ports) | host programs: `System.cmd/3`, `:os.cmd/1` and a supervised long-running port |
 | [`sqlite`](examples/sqlite) | SQLite through exqlite's C NIF, with the database in a mounted host directory |
@@ -180,8 +181,10 @@ it; currently OTP 28, ERTS 16). `pack` refuses a mismatch.
 | `start` | start the release (like `bin/my_app start`) |
 | `serve` | run the `serve` sequence from the config (default: `start`) |
 | `eval EXPR` | evaluate an expression on a release that is not started (like `bin/my_app eval`) |
+| `remote` | a shell on the running node (like `bin/my_app remote`; needs [distribution](#distribution)) |
+| `rpc EXPR` | evaluate an expression on the running node (like `bin/my_app rpc`; needs [distribution](#distribution)) |
 | `vm -- ERL_ARGS` | run the VM with raw `erl` arguments; the release is at `/app` |
-| `info` | what is packed: app, file count, runtime, commands, NIFs, network policy |
+| `info` | what is packed: app, file count, runtime, commands, NIFs, network policy, distribution |
 | `<name>` | a custom command from `[commands]` |
 
 Each option has an environment-variable form, and a flag wins over its variable:
@@ -203,20 +206,28 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--memory-alarm PCT` | `AMPOULE_MEMORY_ALARM` | with `start`, set the `system_memory_high_watermark` alarm at `PCT`% of the memory limit (default: 80; 0 turns it off) |
 | `--idle-stop TIME` | `AMPOULE_IDLE_STOP` | with `start`, stop the VM after `TIME` without connections and start it again on the next one (`300`, `90s`, `5m`, `1h`; see [Stopping when idle](#stopping-when-idle)) |
 | `--stop-timeout SECS` | `AMPOULE_STOP_TIMEOUT` | how long SIGTERM and SIGINT wait for a clean stop (default: 30) |
+| `--node NAME` | `RELEASE_NODE` | run `start` as a distributed node, `NAME` or `NAME@HOST` (see [Distribution](#distribution)) |
+| `--distribution MODE` | `RELEASE_DISTRIBUTION` | `name`, `sname` or `none` (default: `none`, or what `--node` implies) |
+| `--dist-port PORT` | `AMPOULE_DIST_PORT` | the distribution port; without epmd, every node's (default: 9100) |
+| `--epmd MODE` | `AMPOULE_EPMD` | `none`: peers are on the distribution port (default); `host`: register with the host's epmd |
+| `--cookie-file FILE` | `AMPOULE_COOKIE_FILE` | the distribution cookie (default: `RELEASE_COOKIE`, else the release's own) |
 | `--tmp DIR` | `AMPOULE_TMP` | host directory behind `/tmp` (default: a private one) |
 | | `AMPOULE_CA_BUNDLE` | CA certificates file (default: the host's) |
 | `--env KEY=VALUE` | | set an app environment variable |
 
 The rest of the host environment passes through to the app, so `PORT=8080 DATABASE_URL=... ./my_app start`
 works as it would with a normal release. Variables that would break the runtime's layout
-(`RELEASE_*`, `ERL_*`, `AMPOULE_*`, `ROOTDIR`, `BINDIR`, `HOME`, ...) are not passed through.
+(`RELEASE_*`, `ERL_*`, `AMPOULE_*`, `ROOTDIR`, `BINDIR`, `HOME`, ...) are not passed through;
+`RELEASE_NODE`, `RELEASE_DISTRIBUTION` and `RELEASE_COOKIE` configure [distribution](#distribution)
+instead.
 
 VM flags apply as they would with `erl`: `+` flags tune the emulator (`+S`, `+sbwt`, `+hmax`, ...),
 `-env` sets a variable and other flags reach `init`. They come from the release's `vm.args`, then
 `vm_args` in `ampoule.toml`, then `--vm-args` (or `AMPOULE_VM_ARGS`), and a later flag wins;
 `--schedulers` wins over all of them. Inside wasm the VM sees one processor, so scheduler counts
 that depend on it (`+S :4`, `+S -2`, `+SDcpu :2`) are resolved against the host's cores.
-Distribution flags (`-name`, `-sname`, `-setcookie`, ...) are left out with a warning.
+Distribution flags (`-name`, `-sname`, `-setcookie`, ...) are left out with a warning: the node is
+set by the [distribution](#distribution) options.
 
 For debugging, `AMPOULE_TRACE=1` logs path resolution and `poll_oneoff` calls to stderr, and
 `AMPOULE_ENGINE=path/to/beam.wasm` runs a different, non-precompiled engine.
@@ -250,6 +261,13 @@ port_map = { 4000 = 8080 }       # app port -> host port
 [process]
 allow = ["git", "/bin/sh"]       # host programs the app may start (default: none; "*": all on PATH)
 priv = false                     # programs in the release's own priv/ may not run (default: they may)
+
+[distribution]                   # `start` as a distributed node (default: off)
+node = "my_app@10.0.0.5"         # NAME or NAME@HOST; RELEASE_NODE and --node win
+mode = "name"                    # "name", "sname" or "none" (default: from `node`)
+port = 9100                      # the distribution port
+epmd = "none"                    # "none": peers are on `port`; "host": the host's epmd
+cookie_file = "/run/secrets/erlang-cookie"
 ```
 
 Each `serve` step runs as its own VM, because a guest exit ends the runtime process, and the last
@@ -339,6 +357,63 @@ Usable memory is less than the limit: thread stacks and allocator overhead live 
 more of it with more schedulers. The VM's memory also never shrinks once grown, so a spike stays
 reserved until the VM restarts. To kill a runaway process rather than the VM, cap process heaps with
 `+hmax` (and `+hmaxib true` to count binaries) in `vm_args`.
+
+### Distribution
+
+`start` runs the app as one node unless distribution is configured. Naming a node turns it on:
+
+```console
+$ RELEASE_COOKIE=... ./my_app --node my_app@10.0.0.5 start
+$ RELEASE_COOKIE=... ./my_app --node my_app@10.0.0.5 rpc 'IO.inspect(Node.list())'
+[:"my_app@10.0.0.6"]
+```
+
+The node is `-name` when its host has a dot or a colon (an FQDN or an IP address) and `-sname`
+otherwise; `--distribution` (`RELEASE_DISTRIBUTION`, `mode`) says which, as with `mix release`,
+and `none` turns distribution off. `eval` and custom commands run without distribution, as a native
+release's `eval` does. The node sees `RELEASE_NODE` and `RELEASE_DISTRIBUTION` in its environment.
+
+**Finding peers.** The runtime starts no epmd. There are two ways to find the other nodes:
+
+- Without epmd (`epmd = "none"`, the default): every node listens on the distribution port, 9100
+  unless `port` or `--dist-port` says otherwise, and reaches its peers on that same port. This is
+  OTP's `-erl_epmd_port`, which `mix release` documents for deploying without epmd; a release whose
+  `vm.args` sets `-erl_epmd_port` gets that port. A native node joins with the same flags:
+  `erl -name x@10.0.0.7 -setcookie ... -start_epmd false -erl_epmd_port 9100`.
+- With the host's epmd (`epmd = "host"`): the node registers with an epmd already running on the
+  host (`127.0.0.1:4369`, or `ERL_EPMD_PORT`), as a native release does, on a free port or on
+  `port`. ampoule does not start an epmd, and a machine without Erlang has none to start.
+
+Without epmd, two nodes on one address cannot both have the port. On one machine, give each node
+its own host port and send the other's there:
+
+```sh
+./my_app --node a@127.0.0.1 --port-map 9100:9101 --rewrite-connect 127.0.0.1:9100=127.0.0.1:9102 start
+./my_app --node b@127.0.0.1 --port-map 9100:9102 --rewrite-connect 127.0.0.1:9100=127.0.0.1:9101 start
+./my_app --node a@127.0.0.1 --dist-port 9101 rpc 'IO.inspect(Node.connect(:"b@127.0.0.1"))'
+```
+
+**The cookie** comes from `--cookie-file` (`AMPOULE_COOKIE_FILE`), then `RELEASE_COOKIE`, then
+`cookie_file` in `ampoule.toml`, then the release's own `releases/COOKIE`, as with `mix release`.
+That last one is generated when the release is built and packed into the binary, so anyone with the
+binary has it: set one of the others in production. The cookie reaches the VM on its command line
+inside the runtime, which the host's `ps` does not show, and ampoule never prints it.
+
+**The network policy** applies as to any socket. The distribution port is allowed even when
+`--listen` leaves it out, `--port-map` maps it (except with `epmd = "host"`, where epmd would give
+peers the app's port), and connections to peers go through `--rewrite-connect` and
+`--deny-connect`. Node names must resolve inside the app: an IP address works as it is, the host's
+own name (what `-sname` uses) is added to the app's `/etc/hosts` as `127.0.0.1` when the host's
+file does not have it, and other names come from the host's `/etc/hosts`, `--host` and DNS.
+
+**`remote` and `rpc`** take the same options as the node and connect to it: they start a hidden VM
+from the same binary that does not listen (`-dist_listen false`), with the release's
+`remote.vm.args`. When the node's port is mapped, give them the host port with `--dist-port`. As
+with a native release, a remote shell whose input ends stops the node it is attached to; leave it
+with Ctrl-C.
+
+In the release's `vm.args`, `-name`, `-sname` and `-setcookie` are left out with a warning, and
+`-hidden`, `-proto_dist`, `-epmd_module` and `-dist_listen` apply.
 
 ### What the app sees
 
@@ -492,8 +567,9 @@ prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have 
 - Identity: `:os.type()` is `{:unix, :linux}` and `:erlang.system_info(:logical_processors)` is 1
   on every host. `System.pid/0` is the host pid of the process running the VM (the child, under
   `--restart` or `--idle-stop`).
-- Distribution: the app runs as one node; packing removes distribution from its start arguments,
-  and the runtime leaves distribution flags in `vm.args` out.
+- Distribution: no epmd is started, so without the host's epmd every node of a cluster uses the
+  same distribution port, one node per address (see [Distribution](#distribution)). Clustering
+  was tested over TCP (`inet_tcp_dist`) on one machine; TLS distribution was not.
 - NIF threads: a thread a NIF starts must return from its function. `enif_thread_exit` ends the
   thread without the cleanup wasi-libc would do, so joining that thread never returns.
 - OTP version: the engine fixes the OTP major, currently OTP 28 (ERTS 16).
