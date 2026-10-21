@@ -5,6 +5,21 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Programs the release ships in its own `priv/` directories run, by default without
+  `[process] allow`: `System.cmd(Path.join(:code.priv_dir(:my_app), "bin/tool"), args)` and
+  `{:spawn_executable, ...}` ports work as on a native release. The first start extracts the app's
+  whole `priv/` to the private `/tmp` (`.ampoule/priv/<app>-<vsn>/`, same layout and modes, once per
+  run) and runs the program on the host from there. `[process] priv = false` turns it off.
+- Packing keeps `.sh` scripts under `priv/`, and warns when an executable in an app's `priv/` is
+  built for another OS or CPU than the target (ELF and Mach-O, universal binaries included).
+
+### Changed
+
+- The app sees `/tmp/.ampoule`, the runtime's own files (the sys.config overlay, the source of
+  `/etc/hosts`, extracted `priv/` programs), read-only.
+
 ## [0.1.6] - 2026-10-20
 
 ### Added

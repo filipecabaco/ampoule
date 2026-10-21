@@ -21,6 +21,7 @@ mod nif;
 mod pack;
 mod policy;
 mod proc;
+mod shipped;
 mod signals;
 mod spawn;
 mod threads;
@@ -358,6 +359,12 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
     );
     for target in &a.targets {
         let stub = stub_for(own, target, a)?;
+        // Programs in priv/ run on the host as they are: say which ones this target cannot run.
+        if manifest.process.run_priv {
+            for (path, program) in stats.programs.iter().filter(|(_, p)| !p.runs_on(target)) {
+                eprintln!("==> warning: {} is {}; it won't run on {target}", path.trim_start_matches('/'), program.describe());
+            }
+        }
         let out = out_dir.join(format!("{}-{target}", info.name));
         let engine = match &engine_wasm {
             Some(wasm) => {
@@ -838,8 +845,8 @@ fn sweep_stale_tmps(base: &Path) {
 }
 
 /// Files the runtime adds next to the release: sys.config overrides and the resolver
-/// configuration. os_mon's services all run port programs (memsup, cpu_sup, df), which the
-/// runtime cannot spawn.
+/// configuration. os_mon's services all run port programs (memsup, cpu_sup, df), which would run
+/// on the host and report on it rather than on the VM, when the host can run them at all.
 fn write_overlay(tmp: &Path) -> Result<()> {
     let dir = tmp.join(".ampoule");
     std::fs::write(
@@ -906,9 +913,21 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     if !vm.dropped.is_empty() {
         eprintln!("ampoule: ignoring VM flags {} (the app runs as one node)", vm.dropped.join(", "));
     }
+    // Programs from the release's priv/ are extracted below /tmp/.ampoule (see `shipped`), fresh
+    // for each run.
+    let mut policy = o.policy.clone();
+    if m.process.run_priv {
+        let dir = tmp.join(".ampoule/priv");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).with_context(|| format!("creating {}", dir.display()))?;
+        policy.exec.priv_dir = Some(dir);
+    }
     let mut mounts = vec![
         Mount { guest: APP.into(), backend: app_backend },
         Mount { guest: "/tmp".into(), backend: Backend::Host { path: tmp.clone(), ro: false } },
+        // The runtime's own files, read-only to the app: the overlay, /etc/hosts' source, the
+        // extracted priv/ programs it runs.
+        Mount { guest: "/tmp/.ampoule".into(), backend: Backend::Host { path: tmp.join(".ampoule"), ro: true } },
         Mount { guest: "/etc/hosts".into(), backend: Backend::Host { path: kernel::hosts_file(&tmp.join(".ampoule"), &o.hosts)?, ro: true } },
         Mount { guest: "/dev/null".into(), backend: Backend::Host { path: "/dev/null".into(), ro: false } },
         Mount { guest: "/proc".into(), backend: Backend::Proc },
@@ -974,7 +993,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     }
     env.extend(o.env.iter().cloned());
 
-    let kernel = Arc::new(Kernel::new(Mem::new(memory.clone()), argv, env.into_iter().collect(), mounts, o.policy.clone()));
+    let kernel = Arc::new(Kernel::new(Mem::new(memory.clone()), argv, env.into_iter().collect(), mounts, policy));
 
     let mut linker: Linker<Ctx> = Linker::new(&engine);
     wasi::add(&mut linker)?;

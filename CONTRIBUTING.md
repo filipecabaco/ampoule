@@ -106,6 +106,7 @@ and `SHA256SUMS`.
 | `wasi.rs` | `wasi_snapshot_preview1` |
 | `net.rs` | the `ampoule_os` module: BSD sockets, pipes, `dup`, signal registration |
 | `spawn.rs` | host processes: the runtime's stand-in for `erl_child_setup`, and `[process] allow` |
+| `shipped.rs` | programs in the release's own `priv/`: extracting them to run, and reading what they were built for |
 | `unix.rs` | unix domain sockets at guest paths |
 | `fds.rs` | creating host fds close-on-exec, and the lock `fork` takes on macOS |
 | `idle.rs` | the `start` supervisor: `--idle-stop` and `--restart` |

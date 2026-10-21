@@ -249,6 +249,7 @@ port_map = { 4000 = 8080 }       # app port -> host port
 
 [process]
 allow = ["git", "/bin/sh"]       # host programs the app may start (default: none; "*": all on PATH)
+priv = false                     # programs in the release's own priv/ may not run (default: they may)
 ```
 
 Each `serve` step runs as its own VM, because a guest exit ends the runtime process, and the last
@@ -346,7 +347,7 @@ The app sees only these paths:
 | Guest path | Backed by |
 |---|---|
 | `/app` | the embedded release (read-only; files are decompressed when opened) |
-| `/tmp` | a private host directory (`--tmp`, or `$TMPDIR/ampoule-<pid>`) |
+| `/tmp` | a private host directory (`--tmp`, or `$TMPDIR/ampoule-<pid>`); its `.ampoule/`, the runtime's own files, is read-only |
 | `/etc/hosts` | the host's file plus `--host` entries |
 | `/etc/resolv.conf` | the host's |
 | `/etc/ssl/certs/ca-certificates.crt` | the host's CA bundle (or `AMPOULE_CA_BUNDLE`) |
@@ -381,7 +382,8 @@ macOS and 108 on Linux as the host sees it; on macOS that includes the private `
 ### Host programs
 
 Ports, `System.cmd/3` and `:os.cmd/1` start host programs, but only the ones the app allows in
-`[process] allow` (or `--allow-exec`, which replaces that list). Nothing is allowed by default.
+`[process] allow` (or `--allow-exec`, which replaces that list). Nothing on the host is allowed by
+default; programs the release ships in its own `priv/` are (see below).
 
 ```toml
 [process]
@@ -408,6 +410,35 @@ get natively. A program that is not allowed fails with `:eacces`.
 - An empty `FROM scratch` image has no programs to run, not even `/bin/sh`.
 - Exit statuses, `os_pid`, `stderr_to_stdout`, `nouse_stdio` and `{:packet, N}` behave as on a
   native release.
+
+Programs the release ships in its own `priv/` directories run without being allowed: they are the
+app's code. Start one by its path, as on a native release:
+
+```elixir
+System.cmd(Path.join(:code.priv_dir(:my_app), "bin/tool"), ["--version"])
+Port.open({:spawn_executable, Path.join(:code.priv_dir(:my_app), "bin/tool")}, [:binary, :exit_status])
+```
+
+The release's files exist only inside the binary, so the first time a program from an app's
+`priv/` starts, the runtime extracts that app's whole `priv/` to the private `/tmp`, under
+`.ampoule/priv/<app>-<vsn>/`, with the same layout and modes. A program that finds files next to
+itself through its own path finds them there. Each app's `priv/` is extracted once per run, and the
+app sees the copy read-only, so it cannot change what runs.
+
+- Only a file below `/app/lib/<app>-<vsn>/priv/` qualifies, after symlinks are resolved inside the
+  release. A link that leaves the app's `priv/` is not followed when extracting.
+- The program runs on the host like any other: the same rules for `cd:`, arguments and environment
+  apply, and a `#!` script's interpreter is whatever the host has at that path.
+- Packing keeps shell scripts (`.sh`) under `priv/`, where it drops them elsewhere. It also reads the
+  header of each executable in `priv/` and warns when one is built for another OS or CPU than the
+  target, without failing:
+  `==> warning: lib/my_app-0.1.0/priv/bin/tool is a macOS arm64 program; it won't run on x86_64-linux`.
+  Build such programs for each target you pack for, or ship a script.
+- A shell command line (`:os.cmd/1`, `{:spawn, Cmd}`) goes to the host's `/bin/sh` as it is, and a
+  path inside `/app` means nothing there: start priv programs with `System.cmd/3` or
+  `{:spawn_executable, Path}`.
+- `[process] priv = false` turns this off: then a program in `priv/` fails with `:eacces`, as any
+  program that is not allowed does.
 
 ### NIFs
 
@@ -447,9 +478,12 @@ prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have 
 
 ## Limitations
 
-- Host programs run only when [allowed](#host-programs). Port programs inside the release (`priv/`)
-  are not packed, so they cannot run. For the same reason os_mon's `memsup`, `cpu_sup`, `disksup`
-  and `os_sup` are switched off; the [memory alarm](#memory-and-restarts) stands in for `memsup`'s.
+- Host programs run only when [allowed](#host-programs). Programs in the release's own `priv/` run
+  as they were built: one compiled on the machine that packed runs only on hosts of the same OS and
+  CPU, and packing warns about the others. os_mon's
+  `memsup`, `cpu_sup`, `disksup` and `os_sup` stay switched off, since their programs would run on
+  the host and report on it rather than on the VM; the [memory alarm](#memory-and-restarts) stands
+  in for `memsup`'s.
 - Memory: at most 4 GiB, and it never shrinks back once grown (see
   [Memory and restarts](#memory-and-restarts)).
 - File permissions: files the app creates start at 0644 (directories 0755), less the host's umask,
@@ -464,7 +498,8 @@ prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have 
   thread without the cleanup wasi-libc would do, so joining that thread never returns.
 - OTP version: the engine fixes the OTP major, currently OTP 28 (ERTS 16).
 - Precompressed static files: packing drops `.gz` and `.br` files, along with sources, docs, `.map`
-  files and host binaries. `Plug.Static` falls back to the uncompressed file.
+  files, host libraries and shell scripts outside `priv/`. `Plug.Static` falls back to the
+  uncompressed file.
 - Debug information: `.beam` files lose their `Dbgi`, `Docs`, `ExCk`, `ExDp` and `Abst` chunks, so
   `Code.fetch_docs/1` and the debugger's source views have nothing to show.
 

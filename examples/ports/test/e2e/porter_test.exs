@@ -12,6 +12,7 @@ defmodule Porter.E2ETest do
     assert out =~ "host: " <> String.trim(host)
     assert out =~ "guest: {:unix, :linux}"
     assert out =~ "words: 3"
+    assert out =~ "priv: hello, ampoule"
     # System.pid/0 is the binary's own host pid.
     [_, pid] = Regex.run(~r/pid: (\d+)/, out)
     assert String.to_integer(pid) > 0
@@ -49,6 +50,26 @@ defmodule Porter.E2ETest do
     {out, 0} = PackedApp.run(bin, ["eval", code])
     assert out =~ "restarted: true"
     assert out =~ "STILL HERE"
+  end
+
+  test "a program shipped in the app's priv/ runs without being allowed", %{bin: bin} do
+    code = """
+    IO.puts("path: " <> Porter.Greeter.path())
+    IO.inspect(Porter.Greeter.greet("priv"), label: "cmd")
+    IO.inspect(Porter.Greeter.greet([], stderr_to_stdout: true), label: "usage")
+    IO.inspect(Porter.Greeter.greet_each(["one", "two"]), label: "port")
+    # Extracted for the host to run, where the app sees it read-only.
+    IO.inspect(File.write("/tmp/.ampoule/priv/porter-0.1.0/bin/greet", "#!/bin/sh\\necho swapped\\n"), label: "write")
+    IO.inspect(Porter.Greeter.greet("again"), label: "again")
+    """
+
+    {out, 0} = PackedApp.run(bin, ["eval", code])
+    assert out =~ ~r{path: /app/lib/porter-[^/]+/priv/bin/greet}
+    assert out =~ ~s(cmd: {"hello, priv\\n", 0})
+    assert out =~ ~s(usage: {"usage: greet NAME | greet --lines\\n", 2})
+    assert out =~ ~s(port: ["hello, one", "hello, two"])
+    assert out =~ "write: {:error, :erofs}"
+    assert out =~ ~s(again: {"hello, again\\n", 0})
   end
 
   test "a program outside [process] allow is not there for the app", %{bin: bin} do

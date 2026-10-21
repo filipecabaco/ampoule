@@ -24,6 +24,7 @@
 //!
 //! [process]
 //! allow = ["git", "/bin/sh"]       # host programs the app may start ("*": everything on PATH)
+//! priv = false                     # programs in the release's own priv/ may not run (default: they may)
 //! ```
 
 use std::collections::BTreeMap;
@@ -65,12 +66,25 @@ pub struct Network {
     pub port_map: BTreeMap<String, u16>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Process {
     /// Host programs the app may start: bare names (looked up on PATH), absolute paths, or `*`.
     #[serde(default)]
     pub allow: Vec<String>,
+    /// `priv`: programs in the release's own priv/ directories may run (the default).
+    #[serde(rename = "priv", default = "yes")]
+    pub run_priv: bool,
+}
+
+impl Default for Process {
+    fn default() -> Process {
+        Process { allow: Vec::new(), run_priv: true }
+    }
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Process {
@@ -169,7 +183,8 @@ pub const MEMORY_ALARM: u8 = 80;
 /// as os_mon's memsup would, once the VM's memory reaches `pct` percent of its limit, and clears it
 /// 10 points lower. The limit is MemTotal in the runtime's /proc/meminfo; what counts is
 /// `erlang:memory(total)`, which falls again as memory is freed (the wasm memory itself never
-/// shrinks). memsup cannot run here: on Linux it needs a host program packing leaves out.
+/// shrinks). memsup stays off here: its port program would run on the host and measure the host's
+/// memory, not the VM's limit.
 pub fn memory_alarm_eval(pct: u8) -> String {
     format!(
         r#"Pct = {pct},
@@ -330,6 +345,15 @@ mod tests {
     fn config_reads_process_allow() {
         let cfg = load("[process]\nallow = [\"git\", \"/bin/sh\", \"*\"]\n").unwrap();
         assert_eq!(cfg.process.allow, vec!["git", "/bin/sh", "*"]);
+    }
+
+    #[test]
+    fn priv_programs_run_unless_switched_off() {
+        let (on, off) = (load("[process]\nallow = [\"git\"]\n").unwrap(), load("[process]\npriv = false\n").unwrap());
+        assert!(on.process.run_priv && Config::default().process.run_priv && !off.process.run_priv);
+        // A manifest packed before the key existed keeps the default.
+        let old: Process = serde_json::from_str(r#"{"allow": []}"#).unwrap();
+        assert!(old.run_priv);
     }
 
     #[test]

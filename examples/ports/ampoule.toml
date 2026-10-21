@@ -4,6 +4,8 @@
 # The only programs the app itself may start. /bin/sh runs :os.cmd/1 and the long-running port
 # (and, being a shell, whatever its scripts call, such as tr and wc); kill lets the e2e suite stop
 # the port's program to show the supervisor starting it again.
+# Programs the app ships in its own priv/ (priv/bin/greet) need no entry; `priv = false` would stop
+# them.
 allow = ["uname", "/bin/sh", "kill"]
 
 [commands]

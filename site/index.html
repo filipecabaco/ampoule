@@ -205,6 +205,7 @@ _build/prod/ampoule/my_app-aarch64-darwin (26.3 MiB)
             <li>Phoenix, Ecto, Francis, SQLite, plain OTP: <a href="https://github.com/filipecabaco/ampoule/tree/main/examples">six examples</a>, each with an end-to-end suite.</li>
             <li>NIFs in C, C++ or Rust, rebuilt for wasm when you pack. That needs <a href="https://github.com/WebAssembly/wasi-sdk/releases">wasi-sdk</a> 34, and Rust NIFs also need <code>rustup target add wasm32-wasip1-threads</code>.</li>
             <li>Host programs you allow: ports, <code>System.cmd/3</code> and <code>:os.cmd/1</code>, with exit statuses, <code>os_pid</code> and <code>{:packet, N}</code> as on a native release.</li>
+            <li>Programs shipped inside the release, in <code>priv/</code>, with no allow list: they are extracted on first use and run on the host.</li>
             <li>Unix domain sockets (<code>{:local, path}</code>) at the app’s own paths, host services included when you mount them in.</li>
             <li>Elixir and Erlang/OTP 28 on the machine that packs. Nothing on the machine that runs.</li>
           </ul>
@@ -212,7 +213,7 @@ _build/prod/ampoule/my_app-aarch64-darwin (26.3 MiB)
         <div class="rule-col">
           <h3><svg class="rule-icon no" aria-hidden="true"><use href="#no"/></svg> Does not work</h3>
           <ul>
-            <li>Programs shipped inside the release, in <code>priv/</code>: packing leaves them out.</li>
+            <li>A program in <code>priv/</code> built for another OS or CPU than the target: it cannot start there, and packing warns about it.</li>
             <li>Erlang distribution: the app runs as one node.</li>
             <li>An OTP major other than 28: the engine runs ERTS 16.</li>
             <li>A NIF thread that calls <code>enif_thread_exit</code>: it ends without cleanup and joining it never returns. Return from the thread function instead.</li>
