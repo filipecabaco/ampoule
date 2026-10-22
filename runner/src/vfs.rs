@@ -1,11 +1,15 @@
-//! The release image appended by `ampoule pack`: b"RTFS0001", u32 count, then per entry
-//! u16 path length, path, u8 kind, u32 mode, u64 size, u64 offset, u32 stored size; then the data
-//! region, one zstd frame per file (symlink targets raw). The index is parsed at startup and files
-//! are decompressed when the guest opens them. Read-only.
+//! The release image appended by `ampoule pack`: b"RTFS0002", u32 dictionary length and the
+//! dictionary (a zstd dictionary trained on the release's files, or nothing), u32 count, then per
+//! entry u16 path length, path, u8 kind, u32 mode, u64 size, u64 offset, u32 stored size; then the
+//! data region, one zstd frame per file compressed with the dictionary (symlink targets raw). The
+//! index is parsed at startup and files are decompressed when the guest opens them. Read-only.
+//! b"RTFS0001" is the same without the dictionary.
 
 use std::collections::HashMap;
 
-pub const MAGIC: &[u8; 8] = b"RTFS0001";
+pub const MAGIC: &[u8; 8] = b"RTFS0002";
+/// The format before the dictionary.
+const MAGIC_V1: &[u8; 8] = b"RTFS0001";
 pub const KIND_DIR: u8 = 0;
 pub const KIND_FILE: u8 = 1;
 pub const KIND_SYMLINK: u8 = 2;
@@ -21,6 +25,8 @@ pub struct Node {
 
 pub struct RootFs {
     data: &'static [u8],
+    /// Prepared once: every file's frame was compressed with it.
+    dict: Option<zstd::dict::DecoderDictionary<'static>>,
     nodes: HashMap<String, Node>,
     children: HashMap<String, Vec<String>>,
 }
@@ -40,7 +46,15 @@ fn take_array<const N: usize>(b: &mut &[u8]) -> anyhow::Result<[u8; N]> {
 impl RootFs {
     pub fn parse(blob: &'static [u8]) -> anyhow::Result<RootFs> {
         let mut b = blob;
-        anyhow::ensure!(take(&mut b, 8).ok() == Some(&MAGIC[..]), "the release image has an unknown format");
+        let dict = match take(&mut b, 8).ok() {
+            Some(m) if m == &MAGIC[..] => {
+                let len = u32::from_le_bytes(take_array(&mut b)?) as usize;
+                let bytes = take(&mut b, len)?;
+                (!bytes.is_empty()).then(|| zstd::dict::DecoderDictionary::copy(bytes))
+            },
+            Some(m) if m == &MAGIC_V1[..] => None,
+            _ => anyhow::bail!("the release image has an unknown format"),
+        };
         let count = u32::from_le_bytes(take_array(&mut b)?) as usize;
         // Each entry takes at least 27 bytes, which bounds a count read from a corrupt image.
         anyhow::ensure!(count <= b.len() / 27, "the release image is truncated");
@@ -67,7 +81,7 @@ impl RootFs {
             let end = n.offset.checked_add(u64::from(n.csize));
             anyhow::ensure!(end.is_some_and(|e| e <= b.len() as u64), "the release image is truncated at {path}");
         }
-        Ok(RootFs { data: b, nodes, children })
+        Ok(RootFs { data: b, dict, nodes, children })
     }
 
     pub fn get(&self, path: &str) -> Option<&Node> {
@@ -109,7 +123,10 @@ impl RootFs {
     /// can address more than 4 GiB.
     pub fn read(&self, n: &Node) -> std::io::Result<Vec<u8>> {
         let size = usize::try_from(n.size).ok().filter(|s| *s <= u32::MAX as usize).ok_or(std::io::ErrorKind::InvalidData)?;
-        zstd::bulk::decompress(self.raw(n), size)
+        match &self.dict {
+            Some(d) => zstd::bulk::Decompressor::with_prepared_dictionary(d)?.decompress(self.raw(n), size),
+            None => zstd::bulk::decompress(self.raw(n), size),
+        }
     }
 
     pub fn readlink(&self, n: &Node) -> Option<Vec<u8>> {

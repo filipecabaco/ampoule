@@ -186,8 +186,8 @@ export PATH="$HOME/ampoule:$PATH"</code></pre>
         <pre class="cmd"><code><span class="p">$</span> cd my_app
 <span class="p">$</span> ampoule release
 <span class="o">==&gt; MIX_ENV=prod mix release --overwrite
-==&gt; my_app 0.1.0: 1018 files, 11.6 MiB → 5.2 MiB image (32 paths pruned)
-_build/prod/ampoule/my_app-aarch64-darwin (13.4 MiB)
+==&gt; my_app 0.1.0: 1018 files, 11.6 MiB → 4.6 MiB image (32 paths pruned)
+_build/prod/ampoule/my_app-aarch64-darwin (11.8 MiB)
 ==&gt; packed in 0.3s; run `&lt;binary&gt; help` for its commands</span>
 
 <span class="p">$</span> _build/prod/ampoule/my_app-aarch64-darwin start
@@ -457,14 +457,14 @@ allow = ["uname", "/bin/sh"]</code></pre>
       <table>
         <caption class="visually-hidden">Specifications</caption>
         <tbody>
-          <tr><th scope="row">Binary size, examples/francis, macOS arm64</th><td>13.4 MiB</td></tr>
+          <tr><th scope="row">Binary size, examples/francis, macOS arm64</th><td>11.8 MiB</td></tr>
           <tr><th scope="row">Packing time, after <code>mix release</code></th><td>0.3 s</td></tr>
           <tr><th scope="row"><code>docker stop</code>, <code>FROM scratch</code> container</th><td>1 s, clean</td></tr>
           <tr><th scope="row">Supabase Realtime, its own end-to-end suite</th><td>53 / 53</td></tr>
           <tr><th scope="row">The seven examples' end-to-end suites</th><td>48 / 48</td></tr>
           <tr><th scope="row">Targets</th><td class="text">aarch64-darwin, x86_64-darwin, aarch64-linux, x86_64-linux</td></tr>
           <tr><th scope="row">Engine</th><td class="text">ERTS 16.4.0.4 from Erlang/OTP 28.5.0.4, <code>wasm32-wasip1-threads</code></td></tr>
-          <tr><th scope="row">Version</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/releases/latest">v0.1.7</a></td></tr>
+          <tr><th scope="row">Version</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/releases/latest">v0.1.8</a></td></tr>
           <tr><th scope="row">License</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/blob/main/LICENSE">Apache-2.0</a></td></tr>
         </tbody>
       </table>

@@ -1,6 +1,6 @@
 [package]
 name = "ampoule"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 rust-version = "1.99"
 license = "Apache-2.0"
@@ -17,7 +17,9 @@ path = "src/main.rs"
 # build without it (`--no-default-features`) only runs precompiled engines: the base the release
 # packs apps on, smaller by Cranelift.
 default = ["compiler"]
-compiler = ["wasmtime/cranelift", "wasmtime/all-arch", "wasmtime/parallel-compilation"]
+# addr2line and demangle only make a native backtrace of the runtime readable: the lean runtime
+# leaves them out (about 0.4 MB).
+compiler = ["wasmtime/cranelift", "wasmtime/all-arch", "wasmtime/parallel-compilation", "wasmtime/addr2line", "wasmtime/demangle"]
 
 [dependencies]
 anyhow = "1"
@@ -27,7 +29,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 toml = "1"
-wasmtime = { version = "49", default-features = false, features = ["anyhow", "gc", "gc-drc", "threads", "std", "runtime", "addr2line", "demangle"] }
+wasmtime = { version = "49", default-features = false, features = ["anyhow", "gc", "gc-drc", "threads", "std", "runtime"] }
 zstd = "0.14"
 
 [build-dependencies]
