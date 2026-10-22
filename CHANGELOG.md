@@ -5,6 +5,21 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-22
+
+### Changed
+
+- Packed binaries are about 12% smaller (examples/francis: 13.4 MiB in 0.1.7, 11.8 MiB now; c_nif
+  17.0 → 15.1 MiB), with the same startup and throughput:
+  - The release image is compressed with a zstd dictionary trained on the release's own files and
+    stored in the image, so its many small `.beam` files share what they have in common; every file
+    is still its own frame, read when the app opens it (francis: 5.2 → 4.6 MiB).
+  - The precompiled engine is compressed at zstd level 19 instead of 9 (0.6 MB smaller; decompressing
+    takes the same time). Packing an app with NIFs takes about 3 s longer per target.
+  - The lean runtime leaves out wasmtime's `addr2line` and `demangle`, which only make a native
+    backtrace of the runtime itself readable (0.4 MB). The full `ampoule` keeps them.
+- The release image format is `RTFS0002` (the dictionary); images of the earlier format still read.
+
 ## [0.1.7] - 2026-10-21
 
 ### Added

@@ -640,7 +640,8 @@ pub fn precompile(wasm: &[u8], target: &str) -> Result<Vec<u8>> {
     let cfg = crate::engine_target::for_target(triple(target)?)?;
     let engine = wasmtime::Engine::new(&cfg)?;
     let native = engine.precompile_module(wasm).map_err(|e| anyhow::anyhow!("precompiling the engine for {target}: {e:?}"))?;
-    Ok(zstd::bulk::compress(&native, 9)?)
+    // As build.rs compresses the built-in engine: smaller, and no slower to load.
+    Ok(zstd::bulk::compress(&native, 19)?)
 }
 
 #[cfg(not(feature = "compiler"))]

@@ -123,10 +123,13 @@ pub fn build_rootfs(release: &Path) -> Result<(Vec<u8>, Stats)> {
     walk(release, release, &mut entries, &mut stats)?;
     entries.sort_by(|a, b| a.path.cmp(&b.path));
 
-    let compressed: Vec<Vec<u8>> = parallel_compress(&entries);
+    let dict = train_dictionary(&entries);
+    let compressed: Vec<Vec<u8>> = parallel_compress(&entries, &dict)?;
     let mut index = Vec::new();
     let mut data = Vec::new();
     index.extend_from_slice(crate::vfs::MAGIC);
+    index.extend_from_slice(&(dict.len() as u32).to_le_bytes());
+    index.extend_from_slice(&dict);
     index.extend_from_slice(&(entries.len() as u32).to_le_bytes());
     for (e, stored) in entries.iter().zip(&compressed) {
         index.extend_from_slice(&(e.path.len() as u16).to_le_bytes());
@@ -311,21 +314,52 @@ fn strip_beam(data: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn parallel_compress(entries: &[Entry]) -> Vec<Vec<u8>> {
+/// Level of every file's zstd frame. Decompressing costs the same at any level; packing pays.
+const FILE_LEVEL: i32 = 19;
+/// The largest dictionary trained, zstd's default size.
+const DICT_MAX: usize = 112_640;
+/// Below this much file data a dictionary costs more than it saves.
+const DICT_MIN_INPUT: usize = 1 << 20;
+
+/// A zstd dictionary trained on the release's own files, which every file's frame is then
+/// compressed with: a release's many small `.beam` files share most of their structure (chunk
+/// headers, atom tables, common literals) that a frame of its own cannot reuse. Empty, and no
+/// dictionary is used, for a release too small to gain from one or when training fails.
+fn train_dictionary(entries: &[Entry]) -> Vec<u8> {
+    let samples: Vec<&[u8]> = entries.iter().filter(|e| e.kind == crate::vfs::KIND_FILE && !e.data.is_empty()).map(|e| e.data.as_slice()).collect();
+    let total: usize = samples.iter().map(|s| s.len()).sum();
+    if total < DICT_MIN_INPUT || samples.len() < 16 {
+        return Vec::new();
+    }
+    let sizes: Vec<usize> = samples.iter().map(|s| s.len()).collect();
+    let joined: Vec<u8> = samples.concat();
+    zstd::dict::from_continuous(&joined, &sizes, DICT_MAX).unwrap_or_default()
+}
+
+fn parallel_compress(entries: &[Entry], dict: &[u8]) -> Result<Vec<Vec<u8>>> {
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
     let chunk = entries.len().div_ceil(threads).max(1);
+    // Prepared once and shared by every thread, as the reader prepares it once.
+    let prepared = (!dict.is_empty()).then(|| zstd::dict::EncoderDictionary::copy(dict, FILE_LEVEL));
     std::thread::scope(|s| {
         let handles: Vec<_> = entries
             .chunks(chunk)
             .map(|part| {
-                s.spawn(move || {
-                    part.iter()
-                        .map(|e| if e.kind == crate::vfs::KIND_FILE { zstd::bulk::compress(&e.data, 19).expect("zstd") } else { e.data.clone() })
-                        .collect::<Vec<_>>()
+                let prepared = prepared.as_ref();
+                s.spawn(move || -> std::io::Result<Vec<Vec<u8>>> {
+                    let mut z = match prepared {
+                        Some(d) => zstd::bulk::Compressor::with_prepared_dictionary(d)?,
+                        None => zstd::bulk::Compressor::new(FILE_LEVEL)?,
+                    };
+                    part.iter().map(|e| if e.kind == crate::vfs::KIND_FILE { z.compress(&e.data) } else { Ok(e.data.clone()) }).collect()
                 })
             })
             .collect();
-        handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
+        let mut out = Vec::with_capacity(entries.len());
+        for h in handles {
+            out.extend(h.join().map_err(|_| anyhow::anyhow!("a compression thread panicked"))??);
+        }
+        Ok(out)
     })
 }
 
@@ -414,6 +448,70 @@ mod tests {
         let fs = crate::vfs::RootFs::parse(Box::leak(image.into_boxed_slice())).unwrap();
         let (resolved, node) = fs.lookup("/lib/app-1/link", true).unwrap();
         assert_eq!((resolved.as_str(), fs.read(node).unwrap(), stats.files), ("/lib/app-1/ebin/app.app", b"{application, app, []}.".to_vec(), 1));
+    }
+
+    /// 80 files of about 20 KB that share most of their bytes, as a release's `.beam` files do.
+    fn similar_files(root: &Path) -> Vec<(String, Vec<u8>)> {
+        let common: Vec<u8> = (0..16_000u32).flat_map(|i| (i.wrapping_mul(2_654_435_761) >> 13).to_le_bytes()).collect();
+        let files: Vec<(String, Vec<u8>)> = (0..80)
+            .map(|n| {
+                let mut data = common.clone();
+                data.extend(format!("module m{n}: {}", "x".repeat(n * 40)).bytes());
+                (format!("lib/app-1/ebin/m{n}.beam"), data)
+            })
+            .collect();
+        std::fs::create_dir_all(root.join("lib/app-1/ebin")).unwrap();
+        for (path, data) in &files {
+            std::fs::write(root.join(path), data).unwrap();
+        }
+        files
+    }
+
+    fn dictionary_len(image: &[u8]) -> u32 {
+        assert_eq!(&image[..8], crate::vfs::MAGIC);
+        u32::from_le_bytes(image[8..12].try_into().unwrap())
+    }
+
+    #[test]
+    fn a_release_with_many_files_is_compressed_with_a_dictionary_and_reads_back() {
+        let dir = crate::TestDir::new("dict");
+        let files = similar_files(&dir.0);
+        let (image, _) = build_rootfs(&dir.0).unwrap();
+        assert!(dictionary_len(&image) > 0);
+        let fs = crate::vfs::RootFs::parse(Box::leak(image.clone().into_boxed_slice())).unwrap();
+        for (path, data) in &files {
+            assert_eq!(&fs.read(fs.get(&format!("/{path}")).unwrap()).unwrap(), data, "{path}");
+        }
+        // The same files, each its own frame without the dictionary.
+        let entries: Vec<Entry> =
+            files.iter().map(|(p, d)| Entry { path: format!("/{p}"), kind: crate::vfs::KIND_FILE, mode: 0o644, data: d.clone() }).collect();
+        let plain: usize = parallel_compress(&entries, &[]).unwrap().iter().map(Vec::len).sum();
+        let with_dict = image.len() - 12 - dictionary_len(&image) as usize;
+        assert!(with_dict < plain, "{with_dict} bytes with the dictionary, {plain} without");
+    }
+
+    #[test]
+    fn a_small_release_has_no_dictionary() {
+        let dir = crate::TestDir::new("nodict");
+        std::fs::create_dir_all(dir.0.join("lib/app-1")).unwrap();
+        std::fs::write(dir.0.join("lib/app-1/f"), b"data").unwrap();
+        let (image, _) = build_rootfs(&dir.0).unwrap();
+        assert_eq!(dictionary_len(&image), 0);
+        let fs = crate::vfs::RootFs::parse(Box::leak(image.into_boxed_slice())).unwrap();
+        assert_eq!(fs.read(fs.get("/lib/app-1/f").unwrap()).unwrap(), b"data");
+    }
+
+    #[test]
+    fn an_image_of_the_format_before_the_dictionary_still_reads() {
+        let dir = crate::TestDir::new("v1");
+        std::fs::create_dir_all(dir.0.join("lib/app-1")).unwrap();
+        std::fs::write(dir.0.join("lib/app-1/f"), b"data").unwrap();
+        let (image, _) = build_rootfs(&dir.0).unwrap();
+        assert_eq!(dictionary_len(&image), 0);
+        // RTFS0001: the same image without the dictionary length.
+        let v1: Vec<u8> = [&b"RTFS0001"[..], &image[12..]].concat();
+        let fs = crate::vfs::RootFs::parse(Box::leak(v1.into_boxed_slice())).unwrap();
+        assert_eq!(fs.read(fs.get("/lib/app-1/f").unwrap()).unwrap(), b"data");
     }
 
     #[test]

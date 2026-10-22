@@ -11,8 +11,8 @@ The project site is at [filipecabaco.github.io/ampoule](https://filipecabaco.git
 $ cd my_app
 $ ampoule release
 ==> MIX_ENV=prod mix release --overwrite
-==> my_app 0.1.0: 1018 files, 11.6 MiB → 5.2 MiB image (32 paths pruned)
-_build/prod/ampoule/my_app-aarch64-darwin (13.4 MiB)
+==> my_app 0.1.0: 1018 files, 11.6 MiB → 4.6 MiB image (32 paths pruned)
+_build/prod/ampoule/my_app-aarch64-darwin (11.8 MiB)
 ==> packed in 0.3s; run `<binary> help` for its commands
 
 $ _build/prod/ampoule/my_app-aarch64-darwin start
@@ -103,7 +103,7 @@ The output shows each one:
 ```console
 ==> building checksum for wasm (priv/checksum_nif.so)
 ==> linking the engine with 1 NIF(s): checksum_nif
-_build/prod/ampoule/checksum-aarch64-darwin (17.0 MiB)
+_build/prod/ampoule/checksum-aarch64-darwin (15.1 MiB)
 ```
 
 This needs wasi-sdk on the packing machine (see [NIFs](#nifs)). The machine that runs the binary
@@ -141,7 +141,7 @@ ampoule version
 
 Packed apps start from the lean runtime: `ampoule` without the Cranelift compiler, which a packed
 app never needs (its engine is precompiled), so every binary is about 8 MiB smaller
-(examples/francis: 13.4 MiB instead of 21.8). When it is not next to `ampoule`, packing starts from
+(examples/francis: 11.8 MiB instead of 20.6). When it is not next to `ampoule`, packing starts from
 `ampoule` itself, and it refuses a lean runtime from another release. The bare `ampoule-<target>` on
 the releases page is that runtime; on its own it packs apps without NIFs:
 `curl -fLo ampoule https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin && chmod +x ampoule`.
@@ -606,6 +606,9 @@ Packing appends the app to a copy of `ampoule`:
 ```
 
 - The rootfs image is the pruned release, one zstd frame per file, with an index read at startup.
+  Every frame is compressed with a zstd dictionary trained on the release's own files and stored
+  in the image, so the many small `.beam` files share what they have in common and each file is
+  still read on its own.
 - The engine section exists only when the app has NIFs: `beam.wasm` relinked with them and
   precompiled for the binary's target. Without it, the built-in engine runs.
 - The manifest holds the name, version, ERTS version, commands, `serve`, environment defaults,

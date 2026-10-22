@@ -25,7 +25,9 @@ fn main() {
         std::fs::read(&beam).unwrap_or_else(|e| panic!("{}: {e}\nbuild the engine first (`elixir scripts/engine.exs`) or set AMPOULE_BEAM", beam.display()));
     let cfg = engine_target::for_target(&target).expect("wasmtime target");
     let native = wasmtime::Engine::new(&cfg).expect("wasmtime engine").precompile_module(&wasm).expect("precompiling beam.wasm");
-    std::fs::write(out.join("beam.cwasm.zst"), zstd::bulk::compress(&native, 9).expect("zstd")).expect("writing the engine");
+    // Level 19: about 11% smaller than 9 for the same decompression time at startup; only this
+    // build pays (a few seconds).
+    std::fs::write(out.join("beam.cwasm.zst"), zstd::bulk::compress(&native, 19).expect("zstd")).expect("writing the engine");
 
     let erts_vsn = std::env::var("AMPOULE_ERTS_VSN").ok().unwrap_or_else(|| {
         let file = beam.with_file_name("erts_vsn");
