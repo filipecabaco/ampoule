@@ -77,6 +77,26 @@ Or keep them in one directory and point `AMPOULE_STUBS` at it:
 
 The Linux binary for a Docker image can come from a Mac this way, NIFs included.
 
+### To iPhone and iPad
+
+An iOS app can start no other process, and a device maps no executable memory, so there is no
+binary to pack for iOS. The app links ERTS in instead and boots the release on a thread of its
+own; `--target ios` writes what it bundles:
+
+```sh
+ampoule release --target ios
+# _build/prod/ampoule/my_app-ios/
+#   release/                the release, pruned and stripped, without ERTS or host native code
+#   liberlang.xcframework   ERTS, OTP's crypto and asn1 NIFs and OpenSSL, for devices and the simulator
+#   runtime.json            the OTP, ERTS and minimum iOS it was built for
+```
+
+The app calls `erl_start(argc, argv)` with the release's boot script, as its start script would.
+[ex_tauri](https://github.com/filipecabaco/ex_tauri)'s `mix ex_tauri.ios device` does all of it for
+a Tauri app. The runtime comes with the macOS archives (`ios/`, next to `ampoule`), or from
+`AMPOULE_IOS_RUNTIME`; `mise run ios` builds it. Only OTP's own native code runs there: a release
+with other NIFs is refused unless `--allow-native`, which leaves them out.
+
 ## Bring your app as it is
 
 Phoenix, Ecto, Bandit, Francis and plain OTP applications pack without changes.
@@ -126,8 +146,8 @@ runs the binary and tests it from the outside:
 
 Download the archive for your machine from the [releases page](https://github.com/filipecabaco/ampoule/releases). There is one for
 `aarch64-darwin`, `x86_64-darwin`, `aarch64-linux` and `x86_64-linux`, each holding `ampoule`, the
-lean runtime `ampoule-<target>`, the NIF kit (`kit/`) and the license. Keep `kit/` and the lean
-runtime next to `ampoule`. `ampoule-<target>.tar.gz` is the
+lean runtime `ampoule-<target>`, the NIF kit (`kit/`) and the license; the macOS ones also hold
+the iOS runtime (`ios/`). Keep `kit/`, `ios/` and the lean runtime next to `ampoule`. `ampoule-<target>.tar.gz` is the
 latest release, unpacking to `ampoule/`:
 
 ```sh
@@ -166,7 +186,7 @@ Pack options:
 |---|---|---|
 | `--config FILE` | `./ampoule.toml` if present | see [Configuration](#configuration) |
 | `--out DIR` | `_build/<env>/ampoule` | where binaries are written |
-| `--target T` | the host's | `aarch64-darwin`, `x86_64-darwin`, `aarch64-linux`, `x86_64-linux`; repeatable |
+| `--target T` | the host's | `aarch64-darwin`, `x86_64-darwin`, `aarch64-linux`, `x86_64-linux`, or `ios` (see [To iPhone and iPad](#to-iphone-and-ipad)); repeatable |
 | `--stub T=FILE` | `$AMPOULE_STUBS/ampoule-T`, else `ampoule-T` next to `ampoule` | the `ampoule` binary built for target `T` |
 | `--allow-native` | off | drop native code (NIFs) instead of rebuilding it or refusing to pack |
 | `--env ENV` | `$MIX_ENV`, else `prod` | `MIX_ENV` for `release` |

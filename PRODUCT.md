@@ -44,7 +44,8 @@ running needs nothing.
   shipped in `priv/` are not packed. Unix domain sockets, `File.chmod`, the host pid, a memory alarm
   and restart-on-failure since v0.1.4.
 - Distribution with or without epmd (one node per address without the host's epmd); NIF threads must return rather than call `enif_thread_exit`.
-- Released: v0.1.8 on GitHub Releases, one binary and one archive (with the NIF kit) per target.
+- iPhone and iPad since v0.1.9: `--target ios` stages the release with ERTS as a static library (`liberlang.xcframework`) for the app to link in and boot with `erl_start`; verified on an iPad (OTP 28 boots in about 260 ms; crypto, DNS and TLS work).
+- Released: v0.1.9 on GitHub Releases, one binary and one archive (with the NIF kit, and on macOS the iOS runtime) per target.
 
 ## Brand Commitments
 
