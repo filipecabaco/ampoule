@@ -13,6 +13,10 @@ AMPOULE_KIT = "{{config_root}}/build/engine/kit"
 description = "Build the engine (ERTS for wasm) and the NIF kit into build/"
 run = "elixir scripts/engine.exs"
 
+[tasks.ios]
+description = "Build the iOS runtime (ERTS as liberlang.xcframework for iPhone/iPad and the simulator) into build/ios; macOS only"
+run = "elixir scripts/ios.exs"
+
 [tasks.build]
 description = "Build the ampoule binary"
 depends = ["engine"]

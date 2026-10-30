@@ -1,0 +1,41 @@
+# Builds the iOS runtime (ERTS, OTP's static NIFs and OpenSSL as liberlang.xcframework, for
+# iPhone/iPad and the Apple Silicon simulator) and uploads it as the `ios` artifact. It needs Xcode,
+# so it is built on macOS, once, and reused from the cache until its inputs change.
+name: ios
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        id: cache
+        with:
+          path: build/ios/runtime
+          key: ios-${{ hashFiles('scripts/ios.exs', 'engine/patches/erts-ios.patch') }}-${{ runner.os }}
+
+      - uses: erlef/setup-beam@v1.24.1
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          otp-version: "28.5.0.4"
+          elixir-version: "1.19.5"
+
+      - name: Build the runtime
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          elixir scripts/ios.exs
+          mkdir -p build/ios/runtime
+          cp -R build/ios/liberlang.xcframework build/ios/runtime.json build/ios/runtime/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios
+          path: build/ios/runtime
+          if-no-files-found: error

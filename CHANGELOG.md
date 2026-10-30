@@ -5,6 +5,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `ampoule pack --target ios`: a release for an iPhone or iPad app. A device forbids the child
+  process and the executable memory a packed binary needs, so the app links ERTS in instead
+  (`liberlang.xcframework`: the emulator, OTP's crypto and asn1 NIFs, and OpenSSL, for devices and
+  the Apple Silicon simulator) and boots the release from `<name>-ios/release/` by calling
+  `erl_start` on a thread of its own. Native code outside OTP is refused unless `--allow-native`.
+- `scripts/ios.exs` (`mise run ios`) builds that runtime, from the same OTP and OpenSSL as the
+  engine; the macOS release archives carry it as `ios/`, and `AMPOULE_IOS_RUNTIME` points at another.
+
 ## [0.1.8] - 2026-10-22
 
 ### Changed

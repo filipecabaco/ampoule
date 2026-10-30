@@ -1,5 +1,6 @@
 # On a version tag: build ampoule for every target and publish a GitHub release with, per target,
-# a tarball (ampoule, the lean runtime, the NIF kit, LICENSE, NOTICE, README.md) under a versioned
+# a tarball (ampoule, the lean runtime, the NIF kit, on macOS the iOS runtime, LICENSE, NOTICE,
+# README.md) under a versioned
 # and an unversioned name, and the bare lean runtime (built without Cranelift: what packed apps
 # start from, also for cross-target packing), plus SHA256SUMS.
 name: release
@@ -15,8 +16,11 @@ jobs:
   engine:
     uses: ./.github/workflows/engine.yml
 
+  ios:
+    uses: ./.github/workflows/ios.yml
+
   build:
-    needs: engine
+    needs: [engine, ios]
     strategy:
       fail-fast: true
       matrix:
@@ -33,6 +37,13 @@ jobs:
         with:
           name: engine
           path: build/engine
+
+      # `ampoule pack --target ios` reads it from ios/ next to the binary.
+      - uses: actions/download-artifact@v8
+        if: runner.os == 'macOS'
+        with:
+          name: ios
+          path: build/ios/runtime
 
       - uses: dtolnay/rust-toolchain@v1
         with:
@@ -58,6 +69,7 @@ jobs:
           # The lean runtime (no Cranelift), next to ampoule: packed apps start from it.
           cp "runner/target/lean/${{ matrix.target }}/release/ampoule" "dist/$pkg/ampoule-${{ matrix.name }}"
           cp -R build/engine/kit "dist/$pkg/kit"
+          if [ -d build/ios/runtime ]; then cp -R build/ios/runtime "dist/$pkg/ios"; fi
           cp LICENSE NOTICE README.md "dist/$pkg/"
           tar -C dist -czf "dist/$pkg.tar.gz" "$pkg"
           # The same archive under a name without the version, unpacking to ampoule/, so
