@@ -17,6 +17,7 @@ mod errno;
 mod fds;
 mod hostfs;
 mod idle;
+mod ios;
 mod kernel;
 mod mem;
 mod net;
@@ -122,7 +123,8 @@ fn cli_usage() -> ! {
          \n\npack options:\
          \n  --config FILE        ampoule.toml (default: ./ampoule.toml if present)\
          \n  --out DIR            where binaries go (default: _build/<env>/ampoule)\
-         \n  --target T           aarch64-darwin, aarch64-linux, x86_64-linux, ... (repeatable; default: {TARGET})\
+         \n  --target T           aarch64-darwin, aarch64-linux, x86_64-linux, ... (repeatable; default: {TARGET});\
+         \n                       `ios` writes the release and liberlang.xcframework for an iPhone/iPad app instead\
          \n  --stub T=FILE        the ampoule binary to use for target T (default: $AMPOULE_STUBS/ampoule-T)\
          \n  --allow-native       drop native code (NIFs) instead of refusing to pack\
          \n  --env ENV            MIX_ENV for `release` (default: $MIX_ENV or prod)\
@@ -315,6 +317,21 @@ fn project_of(release: &Path) -> Option<(PathBuf, String)> {
 fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Option<(PathBuf, String)>) -> Result<()> {
     let started = std::time::Instant::now();
     let info = ReleaseInfo::from_dir(release)?;
+    let out_dir = match &a.out {
+        Some(o) => o.clone(),
+        None => release.parent().and_then(Path::parent).map(|p| p.join("ampoule")).unwrap_or_else(|| PathBuf::from("ampoule")),
+    };
+
+    // iOS is not a binary: the release itself, for ERTS linked into the app (see `ios`).
+    if a.targets.iter().any(|t| t == ios::TARGET) {
+        let out = ios::pack(release, &info, a.allow_native, &out_dir, &ios::locate()?)?;
+        println!("{}", out.display());
+        if a.targets.iter().all(|t| t == ios::TARGET) {
+            eprintln!("==> packed in {:.1}s", started.elapsed().as_secs_f64());
+            return Ok(());
+        }
+    }
+
     pack::check_erts(&info, ERTS_VSN)?;
     let mut manifest = Manifest::new(&info, load_config(a.config.as_deref())?);
     let (image, stats) = pack::build_rootfs(release)?;
@@ -358,10 +375,6 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
             manifest.nifs = nifs;
         }
     }
-    let out_dir = match &a.out {
-        Some(o) => o.clone(),
-        None => release.parent().and_then(Path::parent).map(|p| p.join("ampoule")).unwrap_or_else(|| PathBuf::from("ampoule")),
-    };
     eprintln!(
         "==> {} {}: {} files, {:.1} MiB → {:.1} MiB image ({} paths pruned{})",
         info.name,
@@ -372,7 +385,7 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
         stats.dropped,
         if stats.foreign_native.is_empty() { String::new() } else { format!(", {} native libraries", stats.foreign_native.len()) }
     );
-    for target in &a.targets {
+    for target in a.targets.iter().filter(|t| *t != ios::TARGET) {
         let stub = stub_for(own, target, a)?;
         // Programs in priv/ run on the host as they are: say which ones this target cannot run.
         if manifest.process.run_priv {

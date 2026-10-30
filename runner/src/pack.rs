@@ -149,6 +149,30 @@ pub fn build_rootfs(release: &Path) -> Result<(Vec<u8>, Stats)> {
     Ok((index, stats))
 }
 
+/// Prune and strip `release` as `build_rootfs` does, but write it to `dest` as a directory:
+/// what an iOS app boots its linked-in ERTS from (see `ios`). Native files are left out the
+/// same way, and the ones outside OTP listed in the stats.
+pub fn write_tree(release: &Path, dest: &Path) -> Result<Stats> {
+    let mut entries = Vec::new();
+    let mut stats = Stats::default();
+    walk(release, release, &mut entries, &mut stats)?;
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    for e in &entries {
+        let path = dest.join(e.path.trim_start_matches('/'));
+        match e.kind {
+            crate::vfs::KIND_DIR => std::fs::create_dir_all(&path)?,
+            crate::vfs::KIND_SYMLINK => std::os::unix::fs::symlink(String::from_utf8_lossy(&e.data).as_ref(), &path)?,
+            _ => {
+                std::fs::write(&path, &e.data).with_context(|| format!("writing {}", path.display()))?;
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(e.mode & 0o777))?;
+                stats.files += 1;
+                stats.bytes += e.data.len() as u64;
+            },
+        }
+    }
+    Ok(stats)
+}
+
 /// Write `stub` + payload to `out`, executable.
 pub fn write_binary(stub: &[u8], rootfs: &[u8], engine: Option<&[u8]>, manifest: &Manifest, out: &Path) -> Result<()> {
     let manifest = serde_json::to_vec(manifest)?;
