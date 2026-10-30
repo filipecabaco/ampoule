@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-30
+
 ### Added
 
 - `ampoule pack --target ios`: a release for an iPhone or iPad app. A device forbids the child
