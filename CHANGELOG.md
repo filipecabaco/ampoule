@@ -5,6 +5,34 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `native_cache` in `ampoule.toml`, `--native-cache`, `AMPOULE_NATIVE_CACHE`: where the engine
+  cache (below) lives: `auto` (the default), `off` (nothing ever written, for a board whose storage
+  should not wear), or a directory, which instances of the same binary on one host can share so the
+  kernel keeps one copy of the engine for all of them. Packed into the binary, overridden where it
+  runs.
+- `--mode embedded|interactive` (`AMPOULE_MODE`): how `start` loads the release's code. `embedded`,
+  the default as before, loads every module at boot, as `mix release` does; `interactive` loads
+  each on first use, a smaller VM for an app that uses little of what it ships.
+
+### Changed
+
+- The engine is mapped from a file instead of decompressed into memory at every start. The first
+  start writes it, decompressed, to `AMPOULE_NATIVE_CACHE`, systemd's `CACHE_DIRECTORY`,
+  `$XDG_CACHE_HOME/ampoule/native` or `~/.cache/ampoule/native` (about 17 MiB per engine, the four
+  most recently used kept); later starts skip the decompression, and the engine's pages are clean
+  and shared instead of about 16 MiB private to each VM. A file is only run when its bytes match the
+  SHA-256 the binary carries for its engine, from a directory and file of the user's own that
+  nobody else can write; a damaged file is written again. A read-only or `noexec` directory falls
+  back to loading in memory and says why. `AMPOULE_NO_CACHE=1` turns it off. Never mount the
+  directory read-write into an app: a VM whose own mounts can write it does not use it.
+- The memory alarm looks every 5 seconds instead of twice a second while memory is below half the
+  alarm level, so an idle VM spends next to nothing on it; in that range the alarm can come up to 5
+  seconds late. Without a memory limit to measure against, it no longer looks at all.
+- The precompiled engine a binary carries (built in, or relinked with NIFs by `pack`) now starts with
+  the SHA-256 of its native code. Stubs must still be of the packing `ampoule`'s version.
+
 ### Fixed
 
 - The arguments after a command reach the app: `<binary> migrate --dry-run` and

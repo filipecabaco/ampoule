@@ -160,12 +160,14 @@ defmodule Greeter.E2ETest do
 
   test "raises the memory alarm, and restarts a VM that runs out of memory", %{bin: bin} do
     # First run: grow by 16 MiB every 400 ms until the 256M cap kills the VM. The marker in the
-    # shared --tmp makes the restarted VM grow once, past the alarm, and release it.
+    # shared --tmp makes the restarted VM grow once, past the alarm, and release it. It holds
+    # the memory 8 s: far below the alarm the watch looks only every 5 s, so a shorter spike
+    # can come and go unseen.
     tmp = Path.join(System.tmp_dir!(), "greeter-oom-#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)
 
     grow = ~S"""
-    -eval 'spawn(fun() -> timer:sleep(1000), case file:read_file_info("/tmp/crashed") of {error, enoent} -> file:write_file("/tmp/crashed", <<>>), F = fun G(Acc) -> timer:sleep(400), G([binary:copy(<<1>>, 16#1000000) | Acc]) end, F([]); _ -> L = [binary:copy(<<1>>, 16#1000000) || _ <- lists:seq(1, 5)], timer:sleep(2000), io:format("released ~B~n", [length(L)]) end end)'
+    -eval 'spawn(fun() -> timer:sleep(1000), case file:read_file_info("/tmp/crashed") of {error, enoent} -> file:write_file("/tmp/crashed", <<>>), F = fun G(Acc) -> timer:sleep(400), G([binary:copy(<<1>>, 16#1000000) | Acc]) end, F([]); _ -> L = [binary:copy(<<1>>, 16#1000000) || _ <- lists:seq(1, 5)], timer:sleep(8000), io:format("released ~B~n", [length(L)]) end end)'
     """
 
     args = [

@@ -637,11 +637,8 @@ fn triple(target: &str) -> Result<&'static str> {
 /// beam.wasm compiled to native code for `target`, compressed as the runtime expects.
 #[cfg(feature = "compiler")]
 pub fn precompile(wasm: &[u8], target: &str) -> Result<Vec<u8>> {
-    let cfg = crate::engine_target::for_target(triple(target)?)?;
-    let engine = wasmtime::Engine::new(&cfg)?;
-    let native = engine.precompile_module(wasm).map_err(|e| anyhow::anyhow!("precompiling the engine for {target}: {e:?}"))?;
-    // As build.rs compresses the built-in engine: smaller, and no slower to load.
-    Ok(zstd::bulk::compress(&native, 19)?)
+    // As build.rs makes the built-in engine.
+    crate::engine_target::precompile(wasm, triple(target)?).map_err(|e| anyhow::anyhow!("precompiling the engine for {target}: {e:?}"))
 }
 
 #[cfg(not(feature = "compiler"))]

@@ -34,6 +34,7 @@ zstd = "0.14"
 
 [build-dependencies]
 wasmtime = { version = "49", default-features = false, features = ["anyhow", "cranelift", "all-arch", "gc", "gc-drc", "threads", "parallel-compilation", "std", "runtime"] }
+sha2 = "0.10"
 zstd = "0.14"
 
 [profile.release]

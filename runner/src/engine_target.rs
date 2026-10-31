@@ -21,3 +21,17 @@ pub fn for_target(triple: &str) -> wasmtime::Result<wasmtime::Config> {
     }
     Ok(cfg)
 }
+
+/// beam.wasm compiled to native code for `triple`, as a binary carries it: the SHA-256 of the
+/// native code, then the code zstd-compressed. The digest is what the runtime checks a cached
+/// copy against before mapping it as code (native_cache), so it has to come from here, with the
+/// code, and not from the cache.
+pub fn precompile(wasm: &[u8], triple: &str) -> wasmtime::Result<Vec<u8>> {
+    use sha2::Digest;
+    let native = wasmtime::Engine::new(&for_target(triple)?)?.precompile_module(wasm)?;
+    let mut packed = sha2::Sha256::digest(&native).to_vec();
+    // Level 19: about 11% smaller than 9 for the same decompression time at startup; only the
+    // build or the pack pays (a few seconds).
+    packed.extend(zstd::bulk::compress(&native, 19)?);
+    Ok(packed)
+}

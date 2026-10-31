@@ -20,6 +20,7 @@ mod idle;
 mod ios;
 mod kernel;
 mod mem;
+mod native_cache;
 mod net;
 mod nif;
 mod pack;
@@ -418,9 +419,15 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
 #[derive(Default)]
 struct RunOpts {
     schedulers: Option<usize>,
+    /// `start`'s code loading: `embedded` (the default, as `mix release`) loads every module at
+    /// boot; `interactive` loads each on first use, a smaller VM for an app that uses little of
+    /// what it ships.
+    mode: Option<&'static str>,
     idle_stop: Option<String>,
     restart: Option<bool>,
     memory_alarm: Option<u8>,
+    /// Where the compiled engine is kept (`native_cache`); over the packed `native_cache`.
+    native_cache: Option<native_cache::Setting>,
     vm_args: Option<String>,
     stop_timeout: Option<u64>,
     memory_max: Option<u64>,
@@ -469,10 +476,12 @@ fn app_usage(m: &Manifest) -> ! {
          \n  --allow-exec PROGS     AMPOULE_ALLOW_EXEC   host programs the app may start, e.g. git,/bin/sh (\"*\": all on PATH)\
          \n  --memory-max SIZE      AMPOULE_MEMORY_MAX   cap the VM's memory, e.g. 512M, 2G\
          \n  --schedulers N         AMPOULE_SCHEDULERS   schedulers (default: host cores)\
+         \n  --mode MODE            AMPOULE_MODE         start's code loading: embedded (default) or interactive\
          \n  --vm-args FLAGS        AMPOULE_VM_ARGS      VM flags as in vm.args, e.g. \"+S :4 +SDio 2\" (after vm.args)\
          \n  --idle-stop TIME       AMPOULE_IDLE_STOP    with `start`, stop the VM after TIME without connections (300, 90s, 5m, 1h) and start it again on the next one\
          \n  --restart MODE         AMPOULE_RESTART      with `start`, on-failure: start the VM again when it fails (a crash, out of memory); off (default)\
          \n  --memory-alarm PCT     AMPOULE_MEMORY_ALARM with `start`, set the system_memory_high_watermark alarm at PCT% of the memory limit (default: 80; 0: off)\
+         \n  --native-cache WHERE   AMPOULE_NATIVE_CACHE where the compiled engine is kept between starts: auto (default), off, or a directory\
          \n  --stop-timeout SECS    AMPOULE_STOP_TIMEOUT how long SIGTERM/SIGINT wait for a clean stop (default: 30)\
          \n  --node NAME            RELEASE_NODE         run `start` as a distributed node: NAME or NAME@HOST\
          \n  --distribution MODE    RELEASE_DISTRIBUTION name, sname or none (default: none, or from --node)\
@@ -556,6 +565,14 @@ fn apply_opt(o: &mut RunOpts, key: &str, v: &str) -> Result<()> {
         },
         "memory-max" => o.memory_max = Some(parse_size(v)?),
         "schedulers" => o.schedulers = Some(v.parse()?),
+        "native-cache" => o.native_cache = Some(native_cache::Setting::parse(v)?),
+        "mode" => {
+            o.mode = Some(match v {
+                "embedded" => "embedded",
+                "interactive" => "interactive",
+                _ => anyhow::bail!("--mode is embedded or interactive, not {v:?}"),
+            })
+        },
         "vm-args" => o.vm_args = Some(v.to_string()),
         "restart" => o.restart = Some(config::parse_restart(v)?),
         "memory-alarm" => {
@@ -591,10 +608,12 @@ const ENV_OPTS: &[(&str, &str)] = &[
     ("AMPOULE_ALLOW_EXEC", "allow-exec"),
     ("AMPOULE_MEMORY_MAX", "memory-max"),
     ("AMPOULE_SCHEDULERS", "schedulers"),
+    ("AMPOULE_MODE", "mode"),
     ("AMPOULE_VM_ARGS", "vm-args"),
     ("AMPOULE_IDLE_STOP", "idle-stop"),
     ("AMPOULE_RESTART", "restart"),
     ("AMPOULE_MEMORY_ALARM", "memory-alarm"),
+    ("AMPOULE_NATIVE_CACHE", "native-cache"),
     ("AMPOULE_STOP_TIMEOUT", "stop-timeout"),
     ("AMPOULE_TMP", "tmp"),
     ("RELEASE_DISTRIBUTION", "distribution"),
@@ -645,16 +664,8 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
             return serve(m, &prefix);
         },
         "start" => {
-            let tail: &[&str] = if m.elixir { &["-mode", "embedded", "-extra", "--no-halt"] } else { &["-mode", "embedded"] };
-            let mut a = release_args(m, "start", "vm.args", tail);
-            let pct = o.memory_alarm.or(m.memory_alarm).unwrap_or(config::MEMORY_ALARM);
-            if pct > 0 {
-                // An init flag, so before -extra; init evaluates it once the release has booted.
-                let at = a.iter().position(|x| x == "-extra").unwrap_or(a.len());
-                a.splice(at..at, ["-eval".to_string(), config::memory_alarm_eval(pct)]);
-            }
             o.role = Some(dist::Role::Node);
-            (a, m.start_env.clone())
+            (start_args(m, &o), m.start_env.clone())
         },
         "remote" | "rpc" => {
             let d = o
@@ -710,6 +721,21 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         }
     }
     std::process::exit(run_vm(&app, &o, erl_args, defaults)?)
+}
+
+/// `start`'s erl arguments: the release booted in `--mode` (embedded by default, as `mix release`),
+/// with the memory alarm unless it is off.
+fn start_args(m: &Manifest, o: &RunOpts) -> Vec<String> {
+    let mode = o.mode.unwrap_or("embedded");
+    let tail: &[&str] = if m.elixir { &["-mode", mode, "-extra", "--no-halt"] } else { &["-mode", mode] };
+    let mut a = release_args(m, "start", "vm.args", tail);
+    let pct = o.memory_alarm.or(m.memory_alarm).unwrap_or(config::MEMORY_ALARM);
+    if pct > 0 {
+        // An init flag, so before -extra; init evaluates it once the release has booted.
+        let at = a.iter().position(|x| x == "-extra").unwrap_or(a.len());
+        a.splice(at..at, ["-eval".to_string(), config::memory_alarm_eval(pct)]);
+    }
+    a
 }
 
 /// `eval` and a `[commands]` entry: evaluate `expr` on a non-booted release, with `argv`
@@ -840,7 +866,9 @@ fn info(app: &App) -> Result<()> {
     Ok(())
 }
 
-fn load_engine(engine: &Engine, packed: Option<&'static [u8]>) -> Result<Module> {
+/// The engine: `AMPOULE_ENGINE`, else the payload's or the built-in one. `writable` are the host
+/// paths the app can write, where the native engine cache must not be.
+fn load_engine(engine: &Engine, packed: Option<&'static [u8]>, cache: &native_cache::Setting, writable: &[&Path]) -> Result<Module> {
     if let Some(path) = std::env::var_os("AMPOULE_ENGINE") {
         let path = PathBuf::from(path);
         #[cfg(feature = "compiler")]
@@ -848,7 +876,20 @@ fn load_engine(engine: &Engine, packed: Option<&'static [u8]>) -> Result<Module>
         #[cfg(not(feature = "compiler"))]
         anyhow::bail!("AMPOULE_ENGINE={}: this ampoule runs only precompiled engines (built without the `compiler` feature)", path.display());
     }
-    let native = zstd::bulk::decompress(packed.unwrap_or(ENGINE), 512 << 20)?;
+    let (digest, compressed) = native_cache::split(packed.unwrap_or(ENGINE)).context("the engine is damaged")?;
+    // Mapped from a file the first start writes (native_cache): clean pages the kernel can reclaim,
+    // instead of a private copy of the whole engine.
+    let mut decompressed = None;
+    if let Some(dir) = native_cache::dir(cache, writable) {
+        match native_cache::load(engine, digest, compressed, &dir) {
+            Ok(module) => return Ok(module),
+            Err(native) => decompressed = native,
+        }
+    }
+    let native = match decompressed {
+        Some(native) => native,
+        None => zstd::bulk::decompress(compressed, 512 << 20)?,
+    };
     // SAFETY: these bytes come from this binary (build.rs) or its own payload (nif::precompile),
     // both produced by wasmtime with engine::config() for this target; the engine checks the
     // version and configuration header before using them.
@@ -1052,7 +1093,13 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     let m = &app.manifest;
 
     let engine = Engine::new(&engine::config())?;
-    let module = load_engine(&engine, app.engine)?;
+    let writable: Vec<&Path> = o.mounts.iter().filter(|(_, _, ro)| !ro).map(|(host, _, _)| host.as_path()).chain(o.tmp.as_deref()).collect();
+    // The flag or variable, else what the app was packed with, else auto.
+    let cache = match &o.native_cache {
+        Some(setting) => setting.clone(),
+        None => m.native_cache.as_deref().map(native_cache::Setting::parse).transpose()?.unwrap_or_default(),
+    };
+    let module = load_engine(&engine, app.engine, &cache, &writable)?;
     let mut mem_ty = module
         .imports()
         .find_map(|i| match (i.module(), i.name(), i.ty()) {
@@ -1252,6 +1299,37 @@ mod tests {
     #[test]
     fn apply_opt_rejects_unknown_options() {
         assert!(apply_opt(&mut RunOpts::default(), "nope", "1").is_err());
+    }
+
+    #[test]
+    fn apply_opt_takes_a_native_cache_setting() {
+        let mut o = RunOpts::default();
+        apply_opt(&mut o, "native-cache", "off").unwrap();
+        assert_eq!(o.native_cache, Some(native_cache::Setting::Off));
+        assert!(apply_opt(&mut o, "native-cache", "here").is_err());
+    }
+
+    #[test]
+    fn apply_opt_takes_embedded_or_interactive_mode() {
+        let mut o = RunOpts::default();
+        apply_opt(&mut o, "mode", "interactive").unwrap();
+        assert_eq!(o.mode, Some("interactive"));
+        apply_opt(&mut o, "mode", "embedded").unwrap();
+        assert_eq!(o.mode, Some("embedded"));
+        assert!(apply_opt(&mut o, "mode", "Interactive").is_err() && apply_opt(&mut o, "mode", "").is_err());
+    }
+
+    #[test]
+    fn start_boots_in_the_mode_asked_for() {
+        let rel = ReleaseInfo { name: "app".into(), vsn: "0.1.0".into(), erts_vsn: "16.4".into(), elixir: true };
+        let m = Manifest::new(&rel, Config::default());
+        let mode = |a: &[String]| a.windows(2).find(|w| w[0] == "-mode").map(|w| w[1].clone());
+        assert_eq!(mode(&start_args(&m, &RunOpts::default())).as_deref(), Some("embedded"));
+        let interactive = start_args(&m, &RunOpts { mode: Some("interactive"), ..RunOpts::default() });
+        assert_eq!(mode(&interactive).as_deref(), Some("interactive"));
+        // Still init flags, before -extra.
+        let at = |x: &str| interactive.iter().position(|a| a == x).unwrap();
+        assert!(at("-mode") < at("-extra") && at("-eval") < at("-extra"));
     }
 
     #[test]
