@@ -198,19 +198,19 @@ it; currently OTP 28, ERTS 16). `pack` refuses a mismatch.
 ### Running the packed app
 
 ```
-<binary> [options] <command>
+<binary> [options] <command> [args...]
 ```
 
 | Command | |
 |---|---|
 | `start` | start the release (like `bin/my_app start`) |
 | `serve` | run the `serve` sequence from the config (default: `start`) |
-| `eval EXPR` | evaluate an expression on a release that is not started (like `bin/my_app eval`) |
+| `eval EXPR [ARGS...]` | evaluate an expression on a release that is not started (like `bin/my_app eval`); `ARGS` are its `System.argv()` |
 | `remote` | a shell on the running node (like `bin/my_app remote`; needs [distribution](#distribution)) |
 | `rpc EXPR` | evaluate an expression on the running node (like `bin/my_app rpc`; needs [distribution](#distribution)) |
 | `vm -- ERL_ARGS` | run the VM with raw `erl` arguments; the release is at `/app` |
 | `info` | what is packed: app, file count, runtime, commands, NIFs, network policy, distribution |
-| `<name>` | a custom command from `[commands]` |
+| `<name> [ARGS...]` | a custom command from `[commands]`; `ARGS` are its `System.argv()`, so a packed binary can be a CLI |
 
 Each option has an environment-variable form, and a flag wins over its variable:
 

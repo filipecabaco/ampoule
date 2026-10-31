@@ -33,6 +33,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The precompiled engine a binary carries (built in, or relinked with NIFs by `pack`) now starts with
   the SHA-256 of its native code. Stubs must still be of the packing `ampoule`'s version.
 
+### Fixed
+
+- The arguments after a command reach the app: `<binary> migrate --dry-run` and
+  `<binary> eval EXPR a b` start it with them as `System.argv()` (`init:get_plain_arguments()`
+  without Elixir), so a packed binary works as a CLI without a wrapper script. They were dropped
+  before ([#23](https://github.com/filipecabaco/ampoule/issues/23)).
+
 ## [0.1.9] - 2026-10-30
 
 ### Added
