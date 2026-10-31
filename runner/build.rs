@@ -1,6 +1,7 @@
 //! Embeds the engine: beam.wasm (AMPOULE_BEAM, default ../build/engine/beam.wasm, produced by
-//! scripts/engine.exs) precompiled to native code for the target and compressed. Releases are not
-//! embedded here: `ampoule pack` appends them to a copy of the binary.
+//! scripts/engine.exs) precompiled to native code for the target, compressed, after the code's
+//! SHA-256 (`engine_target::precompile`). Releases are not embedded here: `ampoule pack` appends
+//! them to a copy of the binary.
 //!
 //! Also records the ERTS version beam.wasm was built from (AMPOULE_ERTS_VSN, default the
 //! `erts_vsn` file next to beam.wasm), which releases must match, and the target name used for stubs.
@@ -23,11 +24,8 @@ fn main() {
     println!("cargo:rerun-if-changed={}", beam.display());
     let wasm =
         std::fs::read(&beam).unwrap_or_else(|e| panic!("{}: {e}\nbuild the engine first (`elixir scripts/engine.exs`) or set AMPOULE_BEAM", beam.display()));
-    let cfg = engine_target::for_target(&target).expect("wasmtime target");
-    let native = wasmtime::Engine::new(&cfg).expect("wasmtime engine").precompile_module(&wasm).expect("precompiling beam.wasm");
-    // Level 19: about 11% smaller than 9 for the same decompression time at startup; only this
-    // build pays (a few seconds).
-    std::fs::write(out.join("beam.cwasm.zst"), zstd::bulk::compress(&native, 19).expect("zstd")).expect("writing the engine");
+    let packed = engine_target::precompile(&wasm, &target).unwrap_or_else(|e| panic!("precompiling beam.wasm: {e:?}"));
+    std::fs::write(out.join("beam.cwasm.zst"), packed).expect("writing the engine");
 
     let erts_vsn = std::env::var("AMPOULE_ERTS_VSN").ok().unwrap_or_else(|| {
         let file = beam.with_file_name("erts_vsn");

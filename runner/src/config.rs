@@ -7,6 +7,7 @@
 //! idle_stop = "5m"               # `start` stops the VM after this long without connections
 //! restart = "on-failure"         # `start` starts the VM again when it fails (crash, out of memory)
 //! memory_alarm = 80              # set system_memory_high_watermark at this % of the VM's memory limit
+//! native_cache = "off"           # keep the compiled engine between starts: "auto" (default), "off", or a directory
 //!
 //! [commands]                       # extra commands: `<binary> migrate` evaluates the expression
 //! migrate = "MyApp.Release.migrate()"
@@ -160,6 +161,9 @@ pub struct Config {
     /// The share of the memory limit, in percent, at which `start` raises the memory alarm (0: never).
     #[serde(default)]
     pub memory_alarm: Option<u8>,
+    /// Where the compiled engine is kept between starts: "auto", "off" or a directory (`native_cache`).
+    #[serde(default)]
+    pub native_cache: Option<String>,
 }
 
 impl Config {
@@ -178,6 +182,9 @@ impl Config {
         }
         if let Some(r) = &cfg.restart {
             parse_restart(r).with_context(|| format!("{}: restart", path.display()))?;
+        }
+        if let Some(c) = &cfg.native_cache {
+            crate::native_cache::Setting::parse(c).with_context(|| format!("{}: native_cache", path.display()))?;
         }
         if cfg.memory_alarm.is_some_and(|p| p > 100) {
             bail!("{}: memory_alarm is a percentage (0-100)", path.display());
@@ -214,6 +221,12 @@ pub const MEMORY_ALARM: u8 = 80;
 /// `erlang:memory(total)`, which falls again as memory is freed (the wasm memory itself never
 /// shrinks). memsup stays off here: its port program would run on the host and measure the host's
 /// memory, not the VM's limit.
+///
+/// The limit is read once: it does not change while the VM runs. Without one (no MemTotal) there
+/// is nothing to measure against, and the process only waits. The watch looks twice a second once
+/// memory is past half the alarm level, and every 5 seconds below that, so an idle VM spends next
+/// to nothing on it: while memory is below half the alarm level, the alarm can come up to 5
+/// seconds after it is reached.
 pub fn memory_alarm_eval(pct: u8) -> String {
     format!(
         r#"Pct = {pct},
@@ -223,22 +236,32 @@ Limit = fun() ->
         _ -> undefined
     end
 end,
-Watch = fun Loop(Up) ->
+Watch = fun Loop(Up, L) ->
     Total = erlang:memory(total),
-    Next = case Limit() of
-        L when is_integer(L), not Up, Total * 100 >= L * Pct ->
+    Next = if
+        not Up, Total * 100 >= L * Pct ->
             logger:warning("ampoule: VM memory at ~B% of its ~B MiB limit; alarm system_memory_high_watermark set", [Total * 100 div L, L bsr 20]),
             catch alarm_handler:set_alarm({{system_memory_high_watermark, []}}),
             true;
-        L when is_integer(L), Up, Total * 100 < L * (Pct - 10) ->
+        Up, Total * 100 < L * (Pct - 10) ->
             logger:notice("ampoule: VM memory back to ~B% of its limit; alarm system_memory_high_watermark cleared", [Total * 100 div L]),
             catch alarm_handler:clear_alarm(system_memory_high_watermark),
             false;
-        _ -> Up
+        true -> Up
     end,
-    receive after 500 -> Loop(Next) end
+    Every = if
+        not Next, Total * 200 < L * Pct -> 5000;
+        true -> 500
+    end,
+    receive after Every -> Loop(Next, L) end
 end,
-register(ampoule_memory_alarm, spawn(fun() -> process_flag(priority, high), Watch(false) end))."#
+register(ampoule_memory_alarm, spawn(fun() ->
+    process_flag(priority, high),
+    case Limit() of
+        L when is_integer(L), L > 0 -> Watch(false, L);
+        _ -> receive after infinity -> ok end
+    end
+end))."#
     )
 }
 
@@ -277,6 +300,9 @@ pub struct Manifest {
     /// `memory_alarm` from ampoule.toml.
     #[serde(default)]
     pub memory_alarm: Option<u8>,
+    /// `native_cache` from ampoule.toml.
+    #[serde(default)]
+    pub native_cache: Option<String>,
 }
 
 impl Manifest {
@@ -302,6 +328,7 @@ impl Manifest {
             idle_stop: cfg.idle_stop,
             restart: cfg.restart,
             memory_alarm: cfg.memory_alarm,
+            native_cache: cfg.native_cache,
         }
     }
 }
@@ -397,6 +424,13 @@ mod tests {
     #[test]
     fn restart_takes_on_failure_or_off() {
         assert!(parse_restart("on-failure").unwrap() && !parse_restart("off").unwrap() && parse_restart("always").is_err());
+    }
+
+    #[test]
+    fn config_takes_a_native_cache_setting() {
+        assert_eq!(load("native_cache = \"off\"\n").unwrap().native_cache.as_deref(), Some("off"));
+        assert!(load("native_cache = \"/srv/engines\"\n").is_ok());
+        assert!(load("native_cache = \"relative\"\n").is_err());
     }
 
     #[test]

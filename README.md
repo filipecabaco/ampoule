@@ -226,6 +226,7 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--allow-exec PROGS` | `AMPOULE_ALLOW_EXEC` | host programs the app may start, e.g. `git,/bin/sh`, or `*` for everything on `PATH` (replaces `[process] allow`; see [Host programs](#host-programs)) |
 | `--memory-max SIZE` | `AMPOULE_MEMORY_MAX` | cap the VM's memory, e.g. `512M`, `2G` |
 | `--schedulers N` | `AMPOULE_SCHEDULERS` | scheduler threads (default: `+S` in the VM flags, else host cores) |
+| `--mode MODE` | `AMPOULE_MODE` | `start`'s code loading: `embedded` (default, every module at boot) or `interactive` (each on first use: less memory for an app that uses little of what it ships) |
 | `--vm-args FLAGS` | `AMPOULE_VM_ARGS` | VM flags written as in `vm.args`, e.g. `"+S :4 +SDio 2"` |
 | `--restart MODE` | `AMPOULE_RESTART` | with `start`, `on-failure` starts the VM again when it fails, out of memory included (default: `off`; see [Memory and restarts](#memory-and-restarts)) |
 | `--memory-alarm PCT` | `AMPOULE_MEMORY_ALARM` | with `start`, set the `system_memory_high_watermark` alarm at `PCT`% of the memory limit (default: 80; 0 turns it off) |
@@ -238,6 +239,7 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--cookie-file FILE` | `AMPOULE_COOKIE_FILE` | the distribution cookie (default: `RELEASE_COOKIE`, else the release's own) |
 | `--tmp DIR` | `AMPOULE_TMP` | host directory behind `/tmp` (default: a private one) |
 | | `AMPOULE_CA_BUNDLE` | CA certificates file (default: the host's) |
+| `--native-cache WHERE` | `AMPOULE_NATIVE_CACHE` | where the compiled engine is kept between starts: `auto` (default), `off`, or a directory (see [the engine cache](#memory-and-restarts)) |
 | `--env KEY=VALUE` | | set an app environment variable |
 
 The rest of the host environment passes through to the app, so `PORT=8080 DATABASE_URL=... ./my_app start`
@@ -268,6 +270,7 @@ vm_args = "+S :4 +SDio 2"        # VM flags as in vm.args, after the release's o
 idle_stop = "5m"                 # stop the VM after 5 minutes without connections
 restart = "on-failure"           # start the VM again when it fails (a crash, out of memory)
 memory_alarm = 80                # memory alarm at this % of the VM's memory limit (0: off)
+native_cache = "auto"            # keep the compiled engine between starts: "auto", "off", or a directory
 
 [commands]                       # `<binary> migrate` evaluates the expression
 migrate = "MyApp.Release.migrate()"
@@ -360,8 +363,10 @@ run here, so code that already sheds load on memsup alarms works unchanged:
 :gen_event.add_handler(:alarm_handler, MyApp.MemoryAlarm, [])   # handle_event({:set_alarm, ...})
 ```
 
-The watch looks twice a second, so it catches memory that grows, not a single allocation that jumps
-past the limit. `/proc/meminfo` reports the limit as `MemTotal`, as a container's cgroup limit
+The watch looks twice a second once memory is past half the alarm level, and every 5 seconds below
+that, so an idle VM spends next to nothing on it; while memory is below half the alarm level, the
+alarm can come up to 5 seconds late. It catches memory that grows, not a single allocation that
+jumps past the limit. `/proc/meminfo` reports the limit as `MemTotal`, as a container's cgroup limit
 shows, for code that sizes itself from it.
 
 **Restarting.** With `restart = "on-failure"` (or `--restart on-failure`), `start` runs the VM as a
@@ -390,6 +395,37 @@ the free memory would serve; setting `+MMmcs` in `vm_args` turns it back on. Wha
 address space: wasm memory cannot shrink, so the range a spike reached remains the VM's, reused for
 its later allocations without taking host memory, and `--memory-max` still caps it. Memory from
 `malloc` (NIFs, OpenSSL, thread stacks) is reused by the VM but not returned.
+
+**The engine cache.** The binary carries the engine (ERTS compiled to native code) compressed. The
+first start writes it out decompressed, and every start after that maps it from that file: its
+pages are clean and shared, so the kernel can drop them under pressure and VMs of the same binary
+share them, where decompressing into memory kept about 16 MiB private to each VM. The file goes
+in the first of `AMPOULE_NATIVE_CACHE`, systemd's `CACHE_DIRECTORY` (a unit with
+`CacheDirectory=`; `<dir>/ampoule`), `$XDG_CACHE_HOME/ampoule/native` (an absolute
+`XDG_CACHE_HOME` only) and `~/.cache/ampoule/native`. Each engine (one per ampoule version, and
+per app with NIFs) takes about 17 MiB, and the four most recently used are kept. The file is named
+and checked by the SHA-256 of the code the binary carries, so a damaged or replaced file is never
+run but written again; the directory and file must belong to the user running the app, with no
+group or other write permission. When the directory cannot be written (a read-only file system)
+or refuses executable mappings (a `noexec` mount), the VM loads the engine in memory as before and
+says why on stderr; after a failed mapping, a `<hash>.unusable` file in the directory stops later
+starts from trying again until it is removed. `AMPOULE_NO_CACHE=1` turns the cache off.
+
+The app chooses when it is packed, with `native_cache` in `ampoule.toml`; `--native-cache` or
+`AMPOULE_NATIVE_CACHE` overrides it where it runs:
+
+- `auto` (the default): the directories above, the first that is set.
+- `off`: nothing is written, ever; every start loads the engine in memory. For a board whose
+  storage should not wear, or a deployment that must not leave files behind. The binary is the
+  same single file either way: the cache is only ever made from what it carries.
+- a directory: that one. Several instances of the same binary on one host pointing at the same
+  directory map one copy of the engine between them, instead of one each: in a test of 1000 nodes
+  in containers, about 17 MiB a node instead of 50.
+
+Never mount the cache directory, or a directory containing it, read-write into an app
+(`--mount`): the app could change the engine file after it was checked, and another VM mapping it
+would run that change as native code, outside wasm. A VM whose own read-write mounts (or `--tmp`)
+contain the cache directory does not use it, and says so.
 
 ### Distribution
 
@@ -578,7 +614,9 @@ The relinked engine is kept in `~/.cache/ampoule/engines/`, under a hash of ever
 reads: the kit, the wasi-sdk version, the `ampoule` version, and each NIF's built archive. Packing
 again with the same NIFs skips the link, which is most of a pack (examples/c_nif: 13 s, then
 1.3 s), and gives the same binary. The NIFs themselves are still built on every pack. The eight
-most recently used engines are kept, and `AMPOULE_NO_CACHE=1` links without the cache.
+most recently used engines are kept, and `AMPOULE_NO_CACHE=1` links without the cache. The same
+variable also turns off the runtime's [engine cache](#memory-and-restarts), for packing and for
+running alike.
 
 Tested with C (eiconv, and SQLite through `exqlite`: see [`examples/sqlite`](examples/sqlite)), C
 with setjmp/longjmp (libpg_query, through `pg_query_ex`), C++ with exceptions (snappy,

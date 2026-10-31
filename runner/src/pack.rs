@@ -9,7 +9,8 @@
 //! ```
 //!
 //! The engine section is present when the release has NIFs: beam.wasm relinked with them and
-//! precompiled for the binary's target (see `nif`).
+//! precompiled for the binary's target (see `nif`), in the built-in engine's form: the native
+//! code's SHA-256, then the code zstd-compressed (`engine_target::precompile`).
 
 use std::collections::BTreeSet;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
