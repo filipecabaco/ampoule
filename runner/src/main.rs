@@ -447,15 +447,17 @@ fn app_usage(m: &Manifest) -> ! {
         .collect();
     eprintln!(
         "{} {} (ampoule {VERSION}, {TARGET})\n\
-         \nusage: {} [options] <command>\n\
+         \nusage: {} [options] <command> [args...]\n\
          \ncommands:\
          \n  start                  start the release\
          \n  serve                  {}\
-         \n  eval EXPR              evaluate an expression on a non-booted release\
+         \n  eval EXPR [ARGS...]    evaluate an expression on a non-booted release\
          \n  remote                 a shell on the running node (needs distribution)\
          \n  rpc EXPR               evaluate an expression on the running node (needs distribution)\
          \n  vm -- ERL_ARGS         run the VM with raw erl arguments (release at {APP})\
          \n  info                   what is packed{custom}\
+         \n\nThe ARGS after eval's expression, or after a command below, reach the app as\
+         \nSystem.argv() (init:get_plain_arguments() without Elixir).\
          \n\noptions (or AMPOULE_* environment variables):\
          \n  --listen PORTS         AMPOULE_LISTEN       ports the app may bind, e.g. 4000,4001 (default: any)\
          \n  --port-map G:H,...     AMPOULE_PORT_MAP     bind app port G as host port H\
@@ -634,13 +636,6 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
     o.dist.check()?;
     o.policy.exec = spawn::Exec::resolve(&o.allow_exec, &std::env::var("PATH").unwrap_or_default());
 
-    let eval = |expr: &str| -> Vec<String> {
-        if m.elixir {
-            release_args(m, "start_clean", "vm.args", &["-extra", "--eval", expr, "--"])
-        } else {
-            release_args(m, "start_clean", "vm.args", &["-eval", expr, "-s", "init", "stop"])
-        }
-    };
     let (erl_args, defaults): (Vec<String>, BTreeMap<String, String>) = match cmd {
         "help" | "-h" => app_usage(m),
         "info" => return info(&app),
@@ -673,7 +668,10 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
             o.role = Some(dist::Role::Client(if cmd == "rpc" { "rpc" } else { "rem" }));
             (client_args(m, &d.target(&dist::hostname()), expr), BTreeMap::new())
         },
-        "eval" => (eval(rest.first().context("eval needs an expression")?), BTreeMap::new()),
+        "eval" => {
+            let (expr, argv) = rest.split_first().context("eval needs an expression")?;
+            (eval_args(m, expr, argv), BTreeMap::new())
+        },
         "vm" => {
             let raw: Vec<String> = rest.iter().skip_while(|a| *a == "--").cloned().collect();
             let mut a: Vec<String> = ["-kernel", "inetrc", "\"/tmp/.ampoule/inetrc\"", "-config", "/tmp/.ampoule/overlay"].map(String::from).to_vec();
@@ -690,7 +688,7 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
             (a, BTreeMap::new())
         },
         custom => match m.commands.get(custom) {
-            Some(expr) => (eval(expr), BTreeMap::new()),
+            Some(expr) => (eval_args(m, expr, rest), BTreeMap::new()),
             None => bail!("unknown command {custom} (see `help`)"),
         },
     };
@@ -712,6 +710,20 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         }
     }
     std::process::exit(run_vm(&app, &o, erl_args, defaults)?)
+}
+
+/// `eval` and a `[commands]` entry: evaluate `expr` on a non-booted release, with `argv`
+/// (what followed the command) as the app's arguments: `System.argv()` for Elixir, after
+/// `--` as `elixir` takes them; `init:get_plain_arguments()` without, after `-extra`.
+fn eval_args(m: &Manifest, expr: &str, argv: &[String]) -> Vec<String> {
+    let mut tail: Vec<&str> = if m.elixir { vec!["-extra", "--eval", expr, "--"] } else { vec!["-eval", expr, "-s", "init", "stop"] };
+    if !argv.is_empty() {
+        if !m.elixir {
+            tail.push("-extra");
+        }
+        tail.extend(argv.iter().map(String::as_str));
+    }
+    release_args(m, "start_clean", "vm.args", &tail)
 }
 
 /// The erl arguments the release's own start script would pass, plus the overlay the runtime
@@ -1247,6 +1259,26 @@ mod tests {
         let rel = ReleaseInfo { name: "app".into(), vsn: "0.1.0".into(), erts_vsn: "16.4".into(), elixir: false };
         let a = release_args(&Manifest::new(&rel, Config::default()), "start", "vm.args", &[]);
         assert!(a.windows(2).any(|w| w == ["-boot", "/app/releases/0.1.0/start"]) && a.contains(&"/tmp/.ampoule/overlay".to_string()));
+    }
+
+    #[test]
+    fn eval_args_hand_the_arguments_after_a_command_to_the_app() {
+        let argv = ["pull", "o11y/x", "--force"].map(String::from);
+        for elixir in [true, false] {
+            let rel = ReleaseInfo { name: "app".into(), vsn: "0.1.0".into(), erts_vsn: "16.4".into(), elixir };
+            let m = Manifest::new(&rel, Config::default());
+            let with = eval_args(&m, "M.run()", &argv);
+            let without = eval_args(&m, "M.run()", &[]);
+            if elixir {
+                // `elixir` makes what follows `--` System.argv().
+                assert!(with.ends_with(&["-extra", "--eval", "M.run()", "--", "pull", "o11y/x", "--force"].map(String::from)));
+                assert!(without.ends_with(&["--eval", "M.run()", "--"].map(String::from)));
+            } else {
+                // init makes what follows -extra its plain arguments.
+                assert!(with.ends_with(&["-eval", "M.run()", "-s", "init", "stop", "-extra", "pull", "o11y/x", "--force"].map(String::from)));
+                assert!(without.ends_with(&["-s", "init", "stop"].map(String::from)) && !without.contains(&"-extra".to_string()));
+            }
+        }
     }
 
     #[test]
