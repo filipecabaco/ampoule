@@ -5,6 +5,18 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `[[mounts]]` in `ampoule.toml`: the mounts an app always needs, packed into the binary. `host`
+  and `guest` expand `~`, `$VAR` and `${VAR}` where the binary runs, so `host = "$PWD"` or
+  `host = "~/.config/my_cli"` follow the user; an unset variable is an error. `create = true`
+  creates a missing host directory with mode `0700`; `ro = true` mounts it read-only. `--mount` and
+  `AMPOULE_MOUNTS` replace the packed mounts, and `info` lists them.
+- `home = "host"` in `ampoule.toml`: the app's `HOME` and init's `-home` are the host's `HOME`
+  instead of its `/tmp`, and host programs get the host's `HOME` too. With both, a packed CLI that
+  works in the current directory and keeps its configuration in `~/.config` needs no wrapper
+  script.
+
 ## [0.1.11] - 2026-11-01
 
 ### Added
