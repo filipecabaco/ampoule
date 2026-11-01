@@ -222,7 +222,7 @@ Each option has an environment-variable form, and a flag wins over its variable:
 | `--host NAME=IP,...` | `AMPOULE_HOSTS` | extra `/etc/hosts` entries |
 | `--rewrite-connect A=B` | `AMPOULE_REWRITE` | send connections for `A` (ip:port) to `B` |
 | `--deny-connect ADDR` | `AMPOULE_DENY` | refuse connections to `ADDR` (ip:port) |
-| `--mount H:G[:ro],...` | `AMPOULE_MOUNTS` | expose host path `H` at guest path `G` |
+| `--mount H:G[:ro],...` | `AMPOULE_MOUNTS` | expose host path `H` at guest path `G` (replaces `[[mounts]]`; see [Mounts in the config](#mounts-in-the-config)) |
 | `--allow-exec PROGS` | `AMPOULE_ALLOW_EXEC` | host programs the app may start, e.g. `git,/bin/sh`, or `*` for everything on `PATH` (replaces `[process] allow`; see [Host programs](#host-programs)) |
 | `--memory-max SIZE` | `AMPOULE_MEMORY_MAX` | cap the VM's memory, e.g. `512M`, `2G` |
 | `--schedulers N` | `AMPOULE_SCHEDULERS` | scheduler threads (default: `+S` in the VM flags, else host cores) |
@@ -246,7 +246,8 @@ The rest of the host environment passes through to the app, so `PORT=8080 DATABA
 works as it would with a normal release. Variables that would break the runtime's layout
 (`RELEASE_*`, `ERL_*`, `AMPOULE_*`, `ROOTDIR`, `BINDIR`, `HOME`, ...) are not passed through;
 `RELEASE_NODE`, `RELEASE_DISTRIBUTION` and `RELEASE_COOKIE` configure [distribution](#distribution)
-instead.
+instead. The app's `HOME` is its `/tmp`, unless `home = "host"` in `ampoule.toml` (see
+[Mounts in the config](#mounts-in-the-config)).
 
 VM flags apply as they would with `erl`: `+` flags tune the emulator (`+S`, `+sbwt`, `+hmax`, ...),
 `-env` sets a variable and other flags reach `init`. They come from the release's `vm.args`, then
@@ -271,6 +272,7 @@ idle_stop = "5m"                 # stop the VM after 5 minutes without connectio
 restart = "on-failure"           # start the VM again when it fails (a crash, out of memory)
 memory_alarm = 80                # memory alarm at this % of the VM's memory limit (0: off)
 native_cache = "auto"            # keep the compiled engine between starts: "auto", "off", or a directory
+home = "host"                    # the app's home is the host's HOME (default: "private", its /tmp)
 
 [commands]                       # `<binary> migrate` evaluates the expression
 migrate = "MyApp.Release.migrate()"
@@ -296,6 +298,15 @@ mode = "name"                    # "name", "sname" or "none" (default: from `nod
 port = 9100                      # the distribution port
 epmd = "none"                    # "none": peers are on `port`; "host": the host's epmd
 cookie_file = "/run/secrets/erlang-cookie"
+
+[[mounts]]                       # host paths the app sees (see below)
+host = "$PWD"
+
+[[mounts]]
+host = "~/.config/my_app"
+guest = "/config"                # default: the expanded host path
+ro = false                       # read-only (default: false)
+create = true                    # create the host directory, mode 0700, when it is missing
 ```
 
 Each `serve` step runs as its own VM, because a guest exit ends the runtime process, and the last
@@ -484,6 +495,42 @@ with Ctrl-C.
 In the release's `vm.args`, `-name`, `-sname` and `-setcookie` are left out with a warning, and
 `-hidden`, `-proto_dist`, `-epmd_module` and `-dist_listen` apply.
 
+#### Mounts in the config
+
+`[[mounts]]` packs the mounts an app always needs, so its users pass no `--mount`. A CLI that
+works on the files in the current directory and keeps a token in `~/.config` needs no wrapper
+script:
+
+```toml
+home = "host"
+
+[commands]
+cli = "MyCli.main()"
+
+[[mounts]]
+host = "$PWD"
+
+[[mounts]]
+host = "~/.config/my_cli"
+create = true
+```
+
+- `~` (alone or before `/`), `$VAR` and `${VAR}` expand where the binary runs, not where it is
+  packed: `$PWD` is the directory the user runs the binary in. An unset variable is an error, not
+  an empty string, so `$UNSET/data` never mounts `/data`.
+- Without `guest`, the app sees the host path at the same path. The app starts in `/`; it can
+  `File.cd(System.get_env("PWD"))`.
+- A missing host path is an error, unless `create = true`: then the directory and its missing
+  parents are created with mode `0700`.
+- `--mount` or `AMPOULE_MOUNTS` replaces the packed mounts, as `--allow-exec` replaces
+  `[process] allow`. `AMPOULE_MOUNTS=` runs the binary with no mounts. `info` lists the packed
+  mounts.
+
+`home = "host"` sets the app's `HOME`, and init's `-home` (`System.user_home/0`), to the host's
+`HOME`. The app then finds `~/.config/my_cli` at the path the user knows. The home directory itself
+is not mounted: only what `[[mounts]]` or `--mount` provide is visible. [Host
+programs](#host-programs) get the host's `HOME` too, so `gh` or `git` find their configuration.
+
 ### What the app sees
 
 The app sees only these paths:
@@ -551,7 +598,8 @@ get natively. A program that is not allowed fails with `:eacces`.
 - The program runs on the host, outside the app's view of the filesystem. Its path and working
   directory (`cd:`) are translated from the app's paths: `cd: "/tmp"` runs it in the host directory
   behind `/tmp`. Arguments and environment pass through unchanged, except `HOME`, which points at the
-  host directory behind the app's `/tmp`. A path inside `/app` means nothing to a host program.
+  host directory behind the app's `/tmp`, or at the host's `HOME` with `home = "host"`. A path inside
+  `/app` means nothing to a host program.
 - Allowing `/bin/sh` (which `:os.cmd/1` and `{:spawn, Cmd}` ports need) allows whatever the shell
   can start. On busybox systems, allowing one applet allows all of them, since the app chooses
   `argv[0]`.
