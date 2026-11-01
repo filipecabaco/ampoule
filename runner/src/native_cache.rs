@@ -22,7 +22,7 @@
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
 use std::hash::BuildHasher;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -228,7 +228,15 @@ fn open_checked(path: &Path, digest: &[u8; 32]) -> Result<Option<File>, String> 
         return Err(format!("{} is not a file of this user's that only they can write", path.display()));
     }
     let mut h = Sha256::new();
-    std::io::copy(&mut file, &mut h).map_err(|e| format!("cannot read {} ({e})", path.display()))?;
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => h.update(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {},
+            Err(e) => return Err(format!("cannot read {} ({e})", path.display())),
+        }
+    }
     if h.finalize()[..] != digest[..] {
         // A torn write or a damaged disk: written again.
         let _ = std::fs::remove_file(path);

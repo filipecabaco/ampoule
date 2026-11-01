@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Starts are about 40 ms faster on aarch64 (Apple silicon, Graviton). Each start checks the engine
+  cache file against its SHA-256, and sha2 0.10 used the ARMv8 SHA instructions only with its `asm`
+  feature: it hashed the 17 MiB engine in software, in about 60 ms. sha2 0.11 detects the
+  instructions at run time, and the check takes about 10 ms. x86_64 already used SHA-NI.
+
 ## [0.1.11] - 2026-11-01
 
 ### Added
