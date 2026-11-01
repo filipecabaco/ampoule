@@ -191,10 +191,42 @@ fn sockopt(level: i32, name: i32) -> Option<(libc::c_int, libc::c_int)> {
         (G_IPPROTO_IP, 1) => (libc::IPPROTO_IP, libc::IP_TOS),
         (G_IPPROTO_IP, 2) => (libc::IPPROTO_IP, libc::IP_TTL),
         (G_IPPROTO_IPV6, 26) => (libc::IPPROTO_IPV6, libc::IPV6_V6ONLY),
+        // Multicast: the guest's (Linux) numbering, as wasi-libc's netinet/in.h has it. Ignored
+        // until these were here, a join answered 0 and joined nothing.
+        (G_IPPROTO_IP, 32) => (libc::IPPROTO_IP, libc::IP_MULTICAST_IF),
+        (G_IPPROTO_IP, 33) => (libc::IPPROTO_IP, libc::IP_MULTICAST_TTL),
+        (G_IPPROTO_IP, 34) => (libc::IPPROTO_IP, libc::IP_MULTICAST_LOOP),
+        (G_IPPROTO_IP, 35) => (libc::IPPROTO_IP, libc::IP_ADD_MEMBERSHIP),
+        (G_IPPROTO_IP, 36) => (libc::IPPROTO_IP, libc::IP_DROP_MEMBERSHIP),
+        (G_IPPROTO_IPV6, 17) => (libc::IPPROTO_IPV6, libc::IPV6_MULTICAST_IF),
+        (G_IPPROTO_IPV6, 18) => (libc::IPPROTO_IPV6, libc::IPV6_MULTICAST_HOPS),
+        (G_IPPROTO_IPV6, 19) => (libc::IPPROTO_IPV6, libc::IPV6_MULTICAST_LOOP),
+        (G_IPPROTO_IPV6, 20) => (libc::IPPROTO_IPV6, IPV6_JOIN),
+        (G_IPPROTO_IPV6, 21) => (libc::IPPROTO_IPV6, IPV6_LEAVE),
         _ => return None,
     };
     Some(host)
 }
+
+// The IPv6 join and leave options, named for what each host calls them.
+#[cfg(target_os = "linux")]
+const IPV6_JOIN: libc::c_int = libc::IPV6_ADD_MEMBERSHIP;
+#[cfg(target_os = "linux")]
+const IPV6_LEAVE: libc::c_int = libc::IPV6_DROP_MEMBERSHIP;
+#[cfg(not(target_os = "linux"))]
+const IPV6_JOIN: libc::c_int = libc::IPV6_JOIN_GROUP;
+#[cfg(not(target_os = "linux"))]
+const IPV6_LEAVE: libc::c_int = libc::IPV6_LEAVE_GROUP;
+
+/// Options whose value the host takes as one byte where the guest passes an int: the IPv4
+/// multicast TTL and loop flag on the BSDs and macOS (Linux takes either).
+fn byte_valued(level: libc::c_int, name: libc::c_int) -> bool {
+    cfg!(not(target_os = "linux")) && level == libc::IPPROTO_IP && (name == libc::IP_MULTICAST_TTL || name == libc::IP_MULTICAST_LOOP)
+}
+
+/// The largest option value passed through: an `ipv6_mreq` (20 bytes) and an `ip_mreqn` (12)
+/// both fit.
+const MAX_OPTVAL: u32 = 32;
 
 fn msg_flags(f: i32) -> libc::c_int {
     let mut h = 0;
@@ -348,6 +380,12 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             // SAFETY: a 16-byte host buffer and its length; `e` keeps `raw` open. Raw libc, as the
             // option is any of those `sockopt` maps, with the guest's length.
             check(unsafe { libc::getsockopt(raw, hl, hn, buf.as_mut_ptr() as *mut libc::c_void, &mut l) })?;
+            // A one-byte host value (see `byte_valued`) as the int the guest asked for.
+            if byte_valued(hl, hn) && l == 1 {
+                let int = buf[0] as i32;
+                buf[..4].copy_from_slice(&int.to_le_bytes());
+                l = 4.min(room) as libc::socklen_t;
+            }
             // Values with host-specific numbering, in the guest's terms.
             let host_int = i32::from_ne_bytes([buf[0], buf[1], buf[2], buf[3]]);
             let guest_int = match (hl, hn) {
@@ -374,7 +412,11 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
             let e = sock(k, fd)?;
             let raw = e.fd()?.as_raw_fd();
             let Some((hl, hn)) = sockopt(level, name) else { return Ok(0) };
-            let v = k.mem.read(val as u32, (len as u32).min(16))?;
+            let mut v = k.mem.read(val as u32, (len as u32).min(MAX_OPTVAL))?;
+            if byte_valued(hl, hn) && v.len() == 4 {
+                let int = i32::from_le_bytes([v[0], v[1], v[2], v[3]]);
+                v = vec![int.clamp(0, 255) as u8];
+            }
             // SAFETY: a host copy of the guest's value and its length; `e` keeps `raw` open.
             check(unsafe { libc::setsockopt(raw, hl, hn, v.as_ptr() as *const libc::c_void, v.len() as libc::socklen_t) })
         })())
@@ -536,4 +578,26 @@ fn name_of(k: &Kernel, fd: i32, addr: u32, len: u32, peer: bool) -> R<i32> {
     let sa = if peer { sa } else { k.policy.guest_local(sa) };
     write_addr(k, sa, addr, len)?;
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multicast_options_reach_the_host() {
+        assert_eq!(sockopt(G_IPPROTO_IPV6, 20), Some((libc::IPPROTO_IPV6, IPV6_JOIN)));
+        assert_eq!(sockopt(G_IPPROTO_IPV6, 21), Some((libc::IPPROTO_IPV6, IPV6_LEAVE)));
+        assert_eq!(sockopt(G_IPPROTO_IPV6, 17), Some((libc::IPPROTO_IPV6, libc::IPV6_MULTICAST_IF)));
+        assert_eq!(sockopt(G_IPPROTO_IP, 35), Some((libc::IPPROTO_IP, libc::IP_ADD_MEMBERSHIP)));
+        assert_eq!(sockopt(G_IPPROTO_IP, 33), Some((libc::IPPROTO_IP, libc::IP_MULTICAST_TTL)));
+        // Still accepted and ignored: an option no host call stands behind.
+        assert_eq!(sockopt(G_IPPROTO_IP, 99), None);
+    }
+
+    #[test]
+    fn the_ipv4_ttl_and_loop_are_one_byte_where_the_host_wants_it() {
+        assert_eq!(byte_valued(libc::IPPROTO_IP, libc::IP_MULTICAST_TTL), cfg!(not(target_os = "linux")));
+        assert!(!byte_valued(libc::IPPROTO_IPV6, libc::IPV6_MULTICAST_HOPS));
+    }
 }

@@ -35,6 +35,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Multicast works: joining and leaving a group (`add_membership`, `drop_membership`, over IPv4 and
+  IPv6), and the multicast interface, TTL or hop limit and loop flag, reach the host. They were
+  accepted and ignored before, so a join answered `:ok` and the app heard nothing sent to the group.
+  An IPv6 link-local group is sent to by naming the interface in the destination's scope
+  (`%{family: :inet6, addr: group, port: port, scope_id: index}`).
 - The arguments after a command reach the app: `<binary> migrate --dry-run` and
   `<binary> eval EXPR a b` start it with them as `System.argv()` (`init:get_plain_arguments()`
   without Elixir), so a packed binary works as a CLI without a wrapper script. They were dropped
