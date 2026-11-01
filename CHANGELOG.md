@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-11-01
+
 ### Added
 
 - `native_cache` in `ampoule.toml`, `--native-cache`, `AMPOULE_NATIVE_CACHE`: where the engine
