@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-11-01
+
 ### Added
 
 - Network interfaces: `:inet.getifaddrs/0` lists the host's (names, flags, IPv4 and IPv6 addresses
