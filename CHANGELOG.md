@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Network interfaces: `:inet.getifaddrs/0` lists the host's (names, flags, IPv4 and IPv6 addresses
+  with netmasks, broadcast and point-to-point addresses), as the app's sockets are host sockets. It
+  answered `{:ok, []}` before. `if_nametoindex` and `if_indextoname` work too, for NIFs and for
+  scoped IPv6 addresses. An app can now find its own address instead of being told it.
+
 ## [0.1.10] - 2026-11-01
 
 ### Added

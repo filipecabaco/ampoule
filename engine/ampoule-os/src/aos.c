@@ -276,3 +276,128 @@ int aos_pages_free(void *addr, size_t size)
     }
     return 0;
 }
+
+/* The host's interfaces (the runner's sockets are host sockets): records from the runner, in the
+ * layout runner/src/ifaddrs.rs describes, made into wasi-libc's struct ifaddrs. Each node is one
+ * allocation holding its name and addresses, so freeifaddrs frees node by node. */
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <stdlib.h>
+
+__attribute__((import_module("ampoule_os"), import_name("getifaddrs")))
+int32_t __aos_getifaddrs(uint8_t *buf, uint32_t len);
+__attribute__((import_module("ampoule_os"), import_name("if_nametoindex")))
+int32_t __aos_if_nametoindex(const char *name, uint32_t len);
+__attribute__((import_module("ampoule_os"), import_name("if_indextoname")))
+int32_t __aos_if_indextoname(uint32_t index, char *name, uint32_t len);
+
+struct aos_ifa {
+    struct ifaddrs ifa;
+    union {
+        struct sockaddr_in v4[3];
+        struct sockaddr_in6 v6[2];
+    } sa;
+    char name[];
+};
+
+static uint32_t le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+
+int getifaddrs(struct ifaddrs **out)
+{
+    uint8_t *buf = NULL;
+    int32_t need = __aos_getifaddrs(NULL, 0);
+    /* Asked again while it grows (an interface came up between the calls). */
+    for (;;) {
+        if (need < 0) {
+            free(buf);
+            errno = -need;
+            return -1;
+        }
+        uint8_t *bigger = realloc(buf, need ? need : 1);
+        if (!bigger) {
+            free(buf);
+            errno = ENOMEM;
+            return -1;
+        }
+        buf = bigger;
+        int32_t got = __aos_getifaddrs(buf, need);
+        if (got <= need) {
+            need = got;
+            break;
+        }
+        need = got;
+    }
+
+    struct ifaddrs *head = NULL, **tail = &head;
+    for (int32_t at = 0; at + 7 <= need;) {
+        uint32_t n = buf[at] | buf[at + 1] << 8;
+        const uint8_t *p = buf + at + 2;
+        uint32_t flags = le32(p + n);
+        uint8_t family = p[n + 4];
+        p += n + 5;
+        struct aos_ifa *node = calloc(1, sizeof(struct aos_ifa) + n + 1);
+        if (!node) {
+            freeifaddrs(head);
+            free(buf);
+            errno = ENOMEM;
+            return -1;
+        }
+        memcpy(node->name, buf + at + 2, n);
+        node->ifa.ifa_name = node->name;
+        node->ifa.ifa_flags = flags;
+        if (family == 1) {
+            for (int i = 0; i < 3; i++)
+                node->sa.v4[i].sin_family = AF_INET;
+            memcpy(&node->sa.v4[0].sin_addr, p, 4);
+            memcpy(&node->sa.v4[1].sin_addr, p + 4, 4);
+            node->ifa.ifa_addr = (struct sockaddr *)&node->sa.v4[0];
+            node->ifa.ifa_netmask = (struct sockaddr *)&node->sa.v4[1];
+            if (p[8]) {
+                memcpy(&node->sa.v4[2].sin_addr, p + 9, 4);
+                node->ifa.ifa_broadaddr = (struct sockaddr *)&node->sa.v4[2];
+            }
+            p += 13;
+        } else if (family == 2) {
+            for (int i = 0; i < 2; i++)
+                node->sa.v6[i].sin6_family = AF_INET6;
+            memcpy(&node->sa.v6[0].sin6_addr, p, 16);
+            memcpy(&node->sa.v6[1].sin6_addr, p + 16, 16);
+            node->sa.v6[0].sin6_scope_id = le32(p + 32);
+            node->ifa.ifa_addr = (struct sockaddr *)&node->sa.v6[0];
+            node->ifa.ifa_netmask = (struct sockaddr *)&node->sa.v6[1];
+            p += 36;
+        }
+        *tail = &node->ifa;
+        tail = &node->ifa.ifa_next;
+        at = p - buf;
+    }
+    free(buf);
+    *out = head;
+    return 0;
+}
+
+void freeifaddrs(struct ifaddrs *ifa)
+{
+    while (ifa) {
+        struct ifaddrs *next = ifa->ifa_next;
+        free(ifa); /* the struct ifaddrs is the first member of its aos_ifa */
+        ifa = next;
+    }
+}
+
+unsigned int if_nametoindex(const char *name)
+{
+    int32_t r = __aos_if_nametoindex(name, strlen(name));
+    return r > 0 ? (unsigned int)r : 0;
+}
+
+char *if_indextoname(unsigned int index, char *name)
+{
+    /* IF_NAMESIZE (compat/net/if.h, not on this file's include path). */
+    int32_t r = __aos_if_indextoname(index, name, 16);
+    if (r < 0) {
+        errno = -r;
+        return NULL;
+    }
+    return name;
+}
