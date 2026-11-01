@@ -514,7 +514,11 @@ and its path is printed.
 
 Sockets are host sockets. Binds and connects go through the network policy (`--listen`,
 `--port-map`, `--listen-host`, `--rewrite-connect`, `--deny-connect`), and everything else goes
-straight to the host. TLS uses OTP's `ssl` with the OpenSSL 3.5 linked into the engine.
+straight to the host. TLS uses OTP's `ssl` with the OpenSSL 3.5 linked into the engine. UDP
+broadcast and multicast work as with any OTP release: `add_membership` joins the group on the host
+(an IPv6 link-local group by interface index), and a datagram to a link-local group names its
+interface in the destination's `scope_id`. OTP's `socket` and `net` modules are not in the engine,
+and `:inet.getifaddrs/0` lists no interfaces.
 
 Unix domain sockets (`{:local, path}` with `gen_tcp` and `gen_udp`) work at the app's own paths:
 binding creates the socket in a directory the app may write (`/tmp`, a writable `--mount`), and
