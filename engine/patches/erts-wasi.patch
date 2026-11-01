@@ -218,3 +218,23 @@ index d36e76d..2965c04 100644
  
  # ----------------------------------------------------
  # Targets
+diff --git a/erts/emulator/drivers/common/inet_drv.c b/erts/emulator/drivers/common/inet_drv.c
+--- a/erts/emulator/drivers/common/inet_drv.c
++++ b/erts/emulator/drivers/common/inet_drv.c
+@@ -6185,6 +6185,16 @@
+ 	    *p++ = (char) *c;
+ 	}
+     }
++}
++#endif
++
++#if defined(HAVE_GETIFADDRS) && !(defined(SIOCGIFCONF) && defined(SIOCSIFFLAGS))
++/* WASI (ampoule): getifaddrs without the SIOCGIFCONF ioctls, whose branch above
++ * is where call_getifaddrs is otherwise defined. */
++static int call_getifaddrs(inet_descriptor* desc_p, struct ifaddrs **ifa_pp)
++{
++    (void)desc_p;
++    return getifaddrs(ifa_pp) == 0 ? 0 : errno;
+ }
+ #endif
+ 

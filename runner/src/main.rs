@@ -17,6 +17,7 @@ mod errno;
 mod fds;
 mod hostfs;
 mod idle;
+mod ifaddrs;
 mod ios;
 mod kernel;
 mod mem;
@@ -1223,6 +1224,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
     let mut linker: Linker<Ctx> = Linker::new(&engine);
     wasi::add(&mut linker)?;
     net::add(&mut linker)?;
+    ifaddrs::add(&mut linker)?;
     spawn::add(&mut linker)?;
     wasi::add_ampoule_os(&mut linker)?;
     mem::add(&mut linker)?;
