@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-11-02
+
 ### Added
 
 - `[[mounts]]` in `ampoule.toml`: the mounts an app always needs, packed into the binary. `host`
@@ -33,6 +35,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   about 1.08 s: they end with `halt()`, not `init:stop()`. Under the runtime, `init:stop()` waited a
   full second in kernel's `user_sup` before it killed the user process. Elixir releases already
   halted.
+- The documentation is in `docs/`: a getting-started guide, guides for deploying, web apps, CLIs,
+  NIFs, clustering and iOS, and a reference for every command, option and `ampoule.toml` key. The
+  README is the overview, and the release archives include `docs/`.
 
 ## [0.1.11] - 2026-11-01
 

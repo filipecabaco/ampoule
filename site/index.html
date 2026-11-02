@@ -228,7 +228,7 @@ _build/prod/ampoule/my_app-aarch64-darwin (11.8 MiB)
         <li>Each run gets a private <code>/tmp</code>, removed when the app exits. A run that wrote <code>erl_crash.dump</code> keeps it and prints where.</li>
         <li>Precompressed static files (<code>.gz</code>, <code>.br</code>) are not packed; <code>Plug.Static</code> serves the uncompressed file.</li>
         <li><code>.beam</code> files lose their debug and docs chunks, so <code>Code.fetch_docs/1</code> has nothing to show.</li>
-        <li>The app sees only its mounts: the release at <code>/app</code>, a private <code>/tmp</code>, <code>/etc/hosts</code>, <code>/etc/resolv.conf</code>, the host's CA bundle, <code>/dev/null</code>, a generated <code>/proc</code>, the host programs you allow, and anything you pass with <code>--mount</code>. <code>--listen</code>, <code>--port-map</code>, <code>--deny-connect</code> and <code>--rewrite-connect</code> decide which ports it binds and where it may connect.</li>
+        <li>The app sees only its mounts: the release at <code>/app</code>, a private <code>/tmp</code>, <code>/etc/hosts</code>, <code>/etc/resolv.conf</code>, the host's CA bundle, <code>/dev/null</code>, a generated <code>/proc</code>, the host programs you allow, and what you mount with <code>--mount</code> or pack in <code>[[mounts]]</code>. <code>--listen</code>, <code>--port-map</code>, <code>--deny-connect</code> and <code>--rewrite-connect</code> decide which ports it binds and where it may connect.</li>
       </ul>
     </section>
 
@@ -307,6 +307,33 @@ CMD ["start"]</code></pre>
             <div class="fit-code">
               <pre class="cmd"><code><span class="p">$</span> ampoule release --target aarch64-darwin \
     --target x86_64-linux</code></pre>
+            </div>
+          </article>
+
+          <article class="fit">
+            <div class="fit-text">
+              <h4>As a command-line tool</h4>
+              <p>With <code>main</code>, the file is the CLI: every argument goes to your function, so users type <code>my_cli pull o11y/x</code>. The runtime’s own commands move behind <code>--vm</code>.</p>
+              <p><code>[[mounts]]</code> shows the app the directory it runs in. With <code>home = "host"</code>, it finds the user’s config under their own home, so nobody needs a wrapper script.</p>
+            </div>
+            <div class="fit-code">
+              <pre class="cmd"><code>home = "host"
+main = "MyCli.main"
+
+[[mounts]]
+host = "$PWD"</code></pre>
+              <pre class="cmd"><code><span class="p">$</span> ./my_cli pull o11y/x
+<span class="p">$</span> ./my_cli --vm info</code></pre>
+            </div>
+          </article>
+
+          <article class="fit">
+            <div class="fit-text">
+              <h4>Into an iPhone or iPad app</h4>
+              <p><code>--target ios</code> writes the release and ERTS as an xcframework for the app to link, with the runtime from the macOS archive. iOS runs no second process, so there is no file to pack for it.</p>
+            </div>
+            <div class="fit-code">
+              <pre class="cmd"><code><span class="p">$</span> ampoule release --target ios</code></pre>
             </div>
           </article>
         </div>
@@ -464,7 +491,7 @@ allow = ["uname", "/bin/sh"]</code></pre>
           <tr><th scope="row">The seven examples' end-to-end suites</th><td>48 / 48</td></tr>
           <tr><th scope="row">Targets</th><td class="text">aarch64-darwin, x86_64-darwin, aarch64-linux, x86_64-linux</td></tr>
           <tr><th scope="row">Engine</th><td class="text">ERTS 16.4.0.4 from Erlang/OTP 28.5.0.4, <code>wasm32-wasip1-threads</code></td></tr>
-          <tr><th scope="row">Version</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/releases/latest">v0.1.11</a></td></tr>
+          <tr><th scope="row">Version</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/releases/latest">v0.1.12</a></td></tr>
           <tr><th scope="row">License</th><td class="text"><a href="https://github.com/filipecabaco/ampoule/blob/main/LICENSE">Apache-2.0</a></td></tr>
         </tbody>
       </table>
