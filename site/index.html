@@ -228,7 +228,7 @@ _build/prod/ampoule/my_app-aarch64-darwin (11.8 MiB)
         <li>Each run gets a private <code>/tmp</code>, removed when the app exits. A run that wrote <code>erl_crash.dump</code> keeps it and prints where.</li>
         <li>Precompressed static files (<code>.gz</code>, <code>.br</code>) are not packed; <code>Plug.Static</code> serves the uncompressed file.</li>
         <li><code>.beam</code> files lose their debug and docs chunks, so <code>Code.fetch_docs/1</code> has nothing to show.</li>
-        <li>The app sees only its mounts: the release at <code>/app</code>, a private <code>/tmp</code>, <code>/etc/hosts</code>, <code>/etc/resolv.conf</code>, the host's CA bundle, <code>/dev/null</code>, a generated <code>/proc</code>, and anything you pass with <code>--mount</code>. <code>--listen</code>, <code>--port-map</code>, <code>--deny-connect</code> and <code>--rewrite-connect</code> decide which ports it binds and where it may connect.</li>
+        <li>The app sees only its mounts: the release at <code>/app</code>, a private <code>/tmp</code>, <code>/etc/hosts</code>, <code>/etc/resolv.conf</code>, the host's CA bundle, <code>/dev/null</code>, a generated <code>/proc</code>, the host programs you allow, and anything you pass with <code>--mount</code>. <code>--listen</code>, <code>--port-map</code>, <code>--deny-connect</code> and <code>--rewrite-connect</code> decide which ports it binds and where it may connect.</li>
       </ul>
     </section>
 
@@ -389,7 +389,7 @@ allow = ["uname", "/bin/sh"]</code></pre>
           <li><span class="callout">1</span><span class="seg-name">ampoule runtime</span><span class="seg-desc">The OS layer, in Rust on wasmtime: WASI, threads, sockets, host programs, signals, a mount table and <code>/proc</code>.</span></li>
           <li><span class="callout">2</span><span class="seg-name">Release image</span><span class="seg-desc">Your release, one compressed frame per file.</span></li>
           <li><span class="callout">3</span><span class="seg-name">Engine with NIFs</span><span class="seg-desc">Dashed: only there when the app has NIFs. The BEAM relinked with them and precompiled for the target.</span></li>
-          <li><span class="callout">4</span><span class="seg-name">Manifest</span><span class="seg-desc">Your commands, <code>serve</code> order, environment defaults and network policy.</span></li>
+          <li><span class="callout">4</span><span class="seg-name">Manifest</span><span class="seg-desc">Your <code>ampoule.toml</code>: commands, <code>serve</code> order, environment defaults, network and process policy, distribution and VM settings.</span></li>
           <li><span class="callout">5</span><span class="seg-name">Trailer</span><span class="seg-desc">Where each section starts.</span></li>
         </ol>
       </figure>

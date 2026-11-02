@@ -9,6 +9,7 @@ checks and built under `build/`, which is not checked in.
 mise install                 # Erlang/OTP 28 and Elixir (see mise.toml); Rust via runner/rust-toolchain.toml
 mise run engine              # build/engine: ERTS for wasm, and the NIF kit   (elixir scripts/engine.exs)
 mise run build               # runner/target/release/ampoule                (cargo build --release)
+mise run ios                 # build/ios: the iOS runtime; macOS with Xcode  (elixir scripts/ios.exs)
 mise run lint                # rustfmt, clippy
 mise run test                # unit tests
 mise run smoke               # pack test/fixture and check the packed app end to end
@@ -84,7 +85,8 @@ engine comes back from the cache.
 | `scripts/examples.exs` | each example's `test/e2e` suite against its packed binary |
 | `scripts/realtime.exs` | Realtime's own e2e suite against a packed Realtime (`test/realtime/ampoule.toml`); run by hand |
 
-CI (`.github/workflows/ci.yml`) builds the engine once, then on Linux and macOS:
+CI (`.github/workflows/ci.yml`) builds the engine once (`engine.yml`, cached until its inputs
+change), then on Linux and macOS:
 
 - `test`: lint, unit tests, the release build and the smoke test.
 - `examples`: each example's end-to-end suite as its own job, against the binary `test` built.
@@ -93,9 +95,17 @@ CI (`.github/workflows/ci.yml`) builds the engine once, then on Linux and macOS:
 ## Releasing
 
 Bump `version` in `runner/Cargo.toml`, move the `Unreleased` entries in `CHANGELOG.md` under the new
-version, and push a `v*` tag. `.github/workflows/release.yml` builds `ampoule` for all four targets
-and publishes a GitHub release with one archive per target (binary, kit, license), the bare binaries
-and `SHA256SUMS`.
+version, and push a `v*` tag. `.github/workflows/release.yml` builds `ampoule` and the lean runtime
+for all four targets, with the engine from `engine.yml` and the iOS runtime from `ios.yml`, and
+publishes a GitHub release with:
+
+- `ampoule-<version>-<target>.tar.gz` per target, and the same archive as `ampoule-<target>.tar.gz`
+  unpacking to `ampoule/`. Each holds `ampoule`, the lean runtime `ampoule-<target>`, `kit/`,
+  LICENSE, NOTICE, README.md and `docs/`; the macOS ones also hold `ios/`.
+- the lean runtime on its own as `ampoule-<target>`, for packing for another target.
+- `SHA256SUMS`.
+
+`.github/workflows/pages.yml` publishes `site/` to GitHub Pages on every push to `main`.
 
 ## Layout
 
@@ -104,7 +114,7 @@ and `SHA256SUMS`.
 | `runner/` | the `ampoule` crate |
 | `engine/patches/erts-wasi.patch` | changes to OTP's ERTS for WASI |
 | `engine/ampoule-os/` | the C support library and headers linked into ERTS and NIFs |
-| `scripts/` | `engine.exs`, `smoke.exs`, `examples.exs`, `realtime.exs`; `logo.exs` and `og.exs` for the brand assets |
+| `scripts/` | `engine.exs`, `ios.exs`, `smoke.exs`, `examples.exs`, `realtime.exs`; `logo.exs` and `og.exs` for the brand assets |
 | `examples/` | example apps with end-to-end suites |
 | `site/` | the GitHub Pages site; `site/og.png` is rendered from `assets/og.html` by `scripts/og.exs` (rename it on a redesign: platforms cache it by URL) |
 | `test/fixture/` | the app `smoke.exs` packs |
@@ -120,18 +130,24 @@ and `SHA256SUMS`.
 | `nif.rs` | rebuilding NIFs for wasm (Mix and cargo) and relinking the engine |
 | `toolchain.rs` | wasi-sdk and kit discovery, and the `ampoule-cc`/`c++` compiler wrapper |
 | `config.rs` | `ampoule.toml` and the embedded manifest |
+| `cache.rs` | relinked NIF engines kept between packs, under a hash of what the link reads |
+| `ios.rs` | `--target ios`: a release and ERTS for an iPhone or iPad app |
 | `dist.rs` | Erlang distribution: node name, cookie, epmd or a fixed port, and the `remote`/`rpc` client |
 | `engine.rs` | wasmtime configuration, shared with `build.rs` |
 | `engine_target.rs` | Cranelift settings for precompiling the engine for a target (`build.rs`, and NIF engines with the `compiler` feature) |
 | `kernel.rs` | fd table, mount table, path resolution |
+| `hostfs.rs` | host-backed paths, walked one component at a time without leaving the guest's view |
 | `wasi.rs` | `wasi_snapshot_preview1` |
 | `net.rs` | the `ampoule_os` module: BSD sockets, pipes, `dup`, signal registration |
 | `spawn.rs` | host processes: the runtime's stand-in for `erl_child_setup`, and `[process] allow` |
 | `shipped.rs` | programs in the release's own `priv/`: extracting them to run, and reading what they were built for |
 | `unix.rs` | unix domain sockets at guest paths |
+| `ifaddrs.rs` | the host's network interfaces, for `getifaddrs` and interface indexes |
 | `fds.rs` | creating host fds close-on-exec, and the lock `fork` takes on macOS |
 | `idle.rs` | the `start` supervisor: `--idle-stop` and `--restart` |
 | `signals.rs` | host signals forwarded to ERTS |
+| `native_cache.rs` | the engine decompressed once and mapped from a file |
+| `vmargs.rs` | `-args_file` (a release's `vm.args`), applied as erlexec applies it |
 | `policy.rs` | the network policy, and the allowed programs |
 | `threads.rs` | `wasi.thread-spawn` and the main thread |
 | `proc.rs` | the generated `/proc` |

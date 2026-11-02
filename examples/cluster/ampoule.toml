@@ -1,4 +1,4 @@
-# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+# Packed into the binary by `ampoule release`. docs/reference/configuration.md has every key.
 
 [distribution]
 mode = "name"   # long names, roster@10.0.0.5; give each node its own with --node or RELEASE_NODE

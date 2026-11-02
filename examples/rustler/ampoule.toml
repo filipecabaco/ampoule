@@ -1,4 +1,4 @@
-# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+# Packed into the binary by `ampoule release`. docs/reference/configuration.md has every key.
 
 [commands]   # `<binary> demo` evaluates the expression
 demo = "IO.puts(TextKit.slugify(\"Hello from Rust, inside wasm!\"))"

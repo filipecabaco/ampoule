@@ -10,6 +10,7 @@ _build/prod/ampoule/porter-<target> host
 # guest: {:unix, :linux}
 # words: 3
 # priv: hello, ampoule
+# pid: <the host pid of the VM>
 ```
 
 - `ampoule.toml`: `[process] allow` lists the only programs the app may start: `uname`, `/bin/sh`
