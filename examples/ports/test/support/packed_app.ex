@@ -32,8 +32,8 @@ defmodule PackedApp do
   Options: `:env` (a list of `{name, value}`), `:guest_port` (default 4000), `:timeout` (ms).
 
   The free port is found by binding and closing it, so on a busy machine another socket can take it
-  before the app binds it. When the app reports its port in use, it is stopped and started again
-  on another port, up to three times.
+  before the app binds it. The app is not moved: when it reports its port in use, the test stops
+  it, picks another free port and starts it again, up to three times, then fails with the log.
   """
   def start!(bin, args, opts \\ []), do: start!(bin, args, opts, 3)
 
@@ -69,7 +69,7 @@ defmodule PackedApp do
 
       :port_taken ->
         kill(app)
-        raise "host port #{port} was in use on every try:\n#{log(app)}"
+        raise "host port #{port} was taken before the app bound it, on each of the tries:\n#{log(app)}"
     end
   end
 
