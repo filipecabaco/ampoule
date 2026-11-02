@@ -15,6 +15,7 @@ mod engine;
 mod engine_target;
 mod errno;
 mod fds;
+mod fetch;
 mod hostfs;
 mod idle;
 mod ifaddrs;
@@ -284,7 +285,8 @@ fn same_runtime(stub: &[u8]) -> bool {
 
 /// The runtime packed apps for `target` start from: `--stub`, else `ampoule-<target>` from a
 /// release next to this executable (the lean runtime, without Cranelift), else `$AMPOULE_STUBS`
-/// for other targets. For this machine's own target, this executable when there is none.
+/// for other targets, else this version's runtime downloaded from its release (see `fetch`). For
+/// this machine's own target, this executable when there is none.
 fn stub_for(own: &'static [u8], target: &str, a: &PackArgs) -> Result<&'static [u8]> {
     let beside = std::env::current_exe()?.parent().map(|d| d.join(format!("ampoule-{target}"))).filter(|p| p.is_file());
     let path = match (a.stubs.get(target), beside) {
@@ -295,9 +297,15 @@ fn stub_for(own: &'static [u8], target: &str, a: &PackArgs) -> Result<&'static [
         },
         (None, beside) => match std::env::var_os("AMPOULE_STUBS") {
             Some(d) => PathBuf::from(d).join(format!("ampoule-{target}")),
-            None => beside.with_context(|| {
-                format!("no runtime for {target}: put ampoule-{target} from a release next to ampoule, pass --stub {target}=FILE, or set AMPOULE_STUBS to a directory with it")
-            })?,
+            None => match beside {
+                Some(p) => p,
+                None if fetch::enabled() => fetch::runtime(target, VERSION).with_context(|| {
+                    format!("no runtime for {target}: put ampoule-{target} from the same release next to ampoule, pass --stub {target}=FILE, or set AMPOULE_STUBS to a directory with it")
+                })?,
+                None => bail!(
+                    "no runtime for {target}: put ampoule-{target} from a release next to ampoule, pass --stub {target}=FILE, or set AMPOULE_STUBS to a directory with it (AMPOULE_NO_FETCH is set, so it is not downloaded)"
+                ),
+            },
         },
     };
     let bytes: &'static [u8] = Box::leak(std::fs::read(&path).with_context(|| format!("runtime for {target}: {}", path.display()))?.into_boxed_slice());

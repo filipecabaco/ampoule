@@ -14,7 +14,7 @@
 | `--config FILE` | `./ampoule.toml` if present | see [Configuration](configuration.md) |
 | `--out DIR` | `_build/<env>/ampoule` | where binaries are written |
 | `--target T` | the host's | `aarch64-darwin`, `x86_64-darwin`, `aarch64-linux`, `x86_64-linux`, or `ios` (see [iPhone and iPad](../guides/ios.md)); repeatable |
-| `--stub T=FILE` | `$AMPOULE_STUBS/ampoule-T`, else `ampoule-T` next to `ampoule` | the `ampoule` binary built for target `T` |
+| `--stub T=FILE` | `$AMPOULE_STUBS/ampoule-T`, else `ampoule-T` next to `ampoule`, else downloaded from the same release | the `ampoule` binary built for target `T` |
 | `--allow-native` | off | drop native code (NIFs) instead of rebuilding it or refusing to pack |
 | `--env ENV` | `$MIX_ENV`, else `prod` | `MIX_ENV` for `release` |
 | `--name NAME` | the only release | which release to build or pack when the project defines several |
@@ -41,12 +41,19 @@ lean runtime from another release.
 
 Packing for another platform uses that platform's lean runtime as the base. Each
 [release](https://github.com/filipecabaco/ampoule/releases) publishes them as `ampoule-<target>`.
-Put the one you need next to `ampoule` and name the target:
+Name the target:
 
 ```sh
-curl -fLo ~/ampoule/ampoule-x86_64-linux https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-x86_64-linux
 ampoule release --target x86_64-linux
 ```
+
+When `ampoule-x86_64-linux` is not next to `ampoule`, packing downloads it from `ampoule`'s own
+release (`v<version>`, never `latest`, so the versions always match), checks it against that
+release's `SHA256SUMS`, and keeps it in `~/.cache/ampoule/runtimes/<version>/` (under
+`$XDG_CACHE_HOME` when that is set) for the next pack. The download uses `curl`. A file that does
+not match its checksum is refused and not kept. `AMPOULE_NO_FETCH=1` turns the download off;
+`AMPOULE_RELEASES=URL` downloads from a mirror laid out as `URL/v<version>/ampoule-<target>` with
+its `SHA256SUMS`.
 
 Or keep them in one directory and point `AMPOULE_STUBS` at it:
 `AMPOULE_STUBS=~/ampoule-stubs ampoule release --target aarch64-darwin --target x86_64-linux`.

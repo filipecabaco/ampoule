@@ -5,6 +5,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `ampoule release --target T` downloads the lean runtime for `T` when `ampoule-T` is not next to
+  `ampoule`: from `ampoule`'s own release, checked against its `SHA256SUMS`, and kept in
+  `~/.cache/ampoule/runtimes/<version>/` for the next pack. Packing for another platform no longer
+  needs a manual download. `AMPOULE_NO_FETCH=1` turns it off, and `AMPOULE_RELEASES` points at a
+  mirror.
+
 ## [0.1.12] - 2026-11-02
 
 ### Added

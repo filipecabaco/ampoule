@@ -131,6 +131,7 @@ publishes a GitHub release with:
 | `toolchain.rs` | wasi-sdk and kit discovery, and the `ampoule-cc`/`c++` compiler wrapper |
 | `config.rs` | `ampoule.toml` and the embedded manifest |
 | `cache.rs` | relinked NIF engines kept between packs, under a hash of what the link reads |
+| `fetch.rs` | the lean runtime of another target, downloaded from the same release when packing needs it |
 | `ios.rs` | `--target ios`: a release and ERTS for an iPhone or iPad app |
 | `dist.rs` | Erlang distribution: node name, cookie, epmd or a fixed port, and the `remote`/`rpc` client |
 | `engine.rs` | wasmtime configuration, shared with `build.rs` |
