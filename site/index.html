@@ -13,17 +13,18 @@
   <meta property="og:url" content="https://filipecabaco.github.io/ampoule/">
   <meta property="og:title" content="ampoule: one executable for your Elixir release">
   <meta property="og:description" content="Pack an Elixir or Erlang release into one file for macOS and Linux: the release, the BEAM as WebAssembly, and the OS layer it runs on. Copy it over and run it.">
-  <meta property="og:image" content="https://filipecabaco.github.io/ampoule/og.png?v=2">
+  <meta property="og:image" content="https://filipecabaco.github.io/ampoule/og.png?v=3">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="ampoule: pack an Elixir or Erlang release into one executable. Step 1, ampoule release. Step 2, copy the one file and run it.">
+  <meta property="og:image:alt" content="ampoule: pack an Elixir or Erlang release into one executable. Step 1, download ampoule with one command. Step 2, ampoule release. Step 3, copy the one file and run it.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ampoule: one executable for your Elixir release">
-  <meta name="twitter:description" content="Pack an Elixir or Erlang release into one file for macOS and Linux. Two steps.">
-  <meta name="twitter:image" content="https://filipecabaco.github.io/ampoule/og.png?v=2">
-  <meta name="twitter:image:alt" content="ampoule: pack an Elixir or Erlang release into one executable, in two steps.">
+  <meta name="twitter:description" content="Pack an Elixir or Erlang release into one file for macOS and Linux. Download, pack, run.">
+  <meta name="twitter:image" content="https://filipecabaco.github.io/ampoule/og.png?v=3">
+  <meta name="twitter:image:alt" content="ampoule: pack an Elixir or Erlang release into one executable: download, pack, run.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="alternate" type="text/plain" href="llms.txt" title="llms.txt: these docs for language models">
   <link rel="preload" href="fonts/familjen-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
@@ -67,7 +68,7 @@
   </svg>
 
   <header class="masthead">
-    <a class="masthead-id" href="#top" aria-label="ampoule AM–0061736D">
+    <a class="masthead-id" href="#top" aria-label="ampoule home">
       <svg class="mark" aria-hidden="true"><use href="#mark"/></svg>
       <span class="part-no">AM–0061736D</span>
     </a>
@@ -84,13 +85,13 @@
     <div class="sheet-one">
       <div class="cover">
         <h1 class="name">ampoule</h1>
-        <p class="claim">Pack an Elixir or Erlang release into one executable. Two steps.</p>
+        <p class="claim">Pack an Elixir or Erlang release into one executable. Download, pack, run.</p>
 
         <section class="inventory" id="inventory" aria-labelledby="inventory-title">
           <h2 id="inventory-title" class="visually-hidden">What you ship</h2>
           <p class="the-part">
             <svg class="mark" aria-hidden="true"><use href="#mark"/></svg>
-            <span><span class="part-name" data-ship-name>my_app-x86_64-linux</span><span class="part-desc">Your release, the BEAM compiled to WebAssembly, and the OS layer it runs on. The machine that runs it needs nothing else.</span></span>
+            <span><span class="part-name">my_app-x86_64-linux</span><span class="part-desc">Your release, the BEAM compiled to WebAssembly, and the OS layer it runs on. The machine that runs it needs nothing else.</span></span>
             <span class="qty">×1</span>
           </p>
         </section>
@@ -100,6 +101,32 @@
       <ol class="steps" id="steps" aria-label="Assembly">
         <li class="step" data-step>
           <span class="step-no" aria-hidden="true">1</span>
+          <svg class="picto" viewBox="0 0 200 150" aria-hidden="true">
+            <!-- A figure at a desk; an arrow brings ampoule down into the laptop. -->
+            <circle cx="46" cy="30" r="12" class="ink-fill"/>
+            <path d="M46 50 L48 92" class="body"/>
+            <path d="M48 92 L40 138 M48 92 L60 138" class="limb"/>
+            <path d="M47 58 L66 74 L96 76" class="limb"/>
+            <path d="M74 84 H186 M86 84 V140 M174 84 V140" class="line"/>
+            <path d="M100 79 H156" class="line heavy"/>
+            <path d="M156 79 L166 36" class="line heavy"/>
+            <path class="accent-stroke" d="M126 34 V64 M115 53 L126 64 L137 53"/>
+          </svg>
+          <div class="step-body">
+            <h2 class="step-title">Download ampoule.</h2>
+            <div class="plate">
+              <pre class="cmd"><code data-install><span class="p">$</span> curl -fsSL https://filipecabaco.github.io/<wbr><span class="keep">ampoule/install.sh | sh</span></code></pre>
+                <button class="copy" type="button" data-copy="[data-install]" aria-label="Copy the install command">
+                  <svg aria-hidden="true"><use href="#icon-copy"/></svg>
+                  <span data-copy-label>Copy</span>
+                </button>
+            </div>
+            <p class="needs">It installs ampoule into <code>~/ampoule</code> with the runtime for every platform, checks each file against the release’s checksums, and prints the line to add to your <code>PATH</code>. It needs no sudo and edits no shell profile. <a href="install.sh">Read the script</a> first, pin a version with <code>AMPOULE_VERSION=0.1.12</code>, or <a href="https://github.com/filipecabaco/ampoule/blob/main/docs/getting-started.md">install by hand</a>.</p>
+          </div>
+        </li>
+
+        <li class="step" data-step>
+          <span class="step-no" aria-hidden="true">2</span>
           <svg class="picto" viewBox="0 0 200 150" aria-hidden="true">
             <!-- A figure at a desk, typing into a laptop. -->
             <circle cx="46" cy="30" r="12" class="ink-fill"/>
@@ -112,46 +139,23 @@
             <path class="accent-stroke" d="M114 54 l8 6 -8 6 M128 66 h12"/>
           </svg>
           <div class="step-body">
-            <h2 class="step-title">Get ampoule. Pack your project.</h2>
-            <fieldset class="targets">
-              <legend>Pack on</legend>
-              <label><input type="radio" name="host" value="aarch64-darwin" checked><span>macOS arm64</span></label>
-              <label><input type="radio" name="host" value="x86_64-darwin"><span>macOS x86_64</span></label>
-              <label><input type="radio" name="host" value="aarch64-linux"><span>Linux arm64</span></label>
-              <label><input type="radio" name="host" value="x86_64-linux"><span>Linux x86_64</span></label>
-            </fieldset>
-            <fieldset class="targets">
-              <legend>Run on</legend>
-              <label><input type="radio" name="ship" value="aarch64-darwin"><span>macOS arm64</span></label>
-              <label><input type="radio" name="ship" value="x86_64-darwin"><span>macOS x86_64</span></label>
-              <label><input type="radio" name="ship" value="aarch64-linux"><span>Linux arm64</span></label>
-              <label><input type="radio" name="ship" value="x86_64-linux" checked><span>Linux x86_64</span></label>
-            </fieldset>
-            <div class="plate">
-              <pre class="cmd" id="install"><code data-install>base=https://<wbr>github.com/<wbr>filipecabaco/<wbr>ampoule/<wbr>releases/<wbr>latest/<wbr>download
-curl -fsSL <span class="token">"$base/ampoule-aarch64-darwin.tar.gz"</span> \
-  | tar -xz -C ~
-curl -fLo ~/ampoule/ampoule-x86_64-linux \
-  <span class="token">"$base/ampoule-x86_64-linux"</span>
-export PATH="$HOME/ampoule:$PATH"</code></pre>
-              <button class="copy" type="button" data-copy="[data-install]">
-                <svg aria-hidden="true"><use href="#icon-copy"/></svg>
-                <span data-copy-label>Copy</span>
-              </button>
+            <h2 class="step-title">Pack your project.</h2>
+            <div class="stage">
+              <p class="stage-say">In your Mix project:</p>
+              <div class="plate">
+                <pre class="cmd"><code data-release><span class="p">$</span> ampoule release --target x86_64-linux</code></pre>
+                <button class="copy" type="button" data-copy="[data-release]" aria-label="Copy the pack command">
+                  <svg aria-hidden="true"><use href="#icon-copy"/></svg>
+                  <span data-copy-label>Copy</span>
+                </button>
+              </div>
             </div>
-            <div class="plate">
-              <pre class="cmd"><code data-release><span class="p">$</span> ampoule release --target x86_64-linux</code></pre>
-              <button class="copy" type="button" data-copy="[data-release]">
-                <svg aria-hidden="true"><use href="#icon-copy"/></svg>
-                <span data-copy-label>Copy</span>
-              </button>
-            </div>
-            <p class="needs">Run it in your Mix project. Packing needs Elixir and Erlang/OTP 28 on this machine; the one that runs the file needs nothing.</p>
+            <p class="needs">Without <code>--target</code>, it packs for the machine you are on. Settings such as running migrations before the app starts go in <code>ampoule.toml</code> next to <code>mix.exs</code>, before you pack (see <a href="#more">Running it</a>). Packing needs Elixir and Erlang/OTP 28; the machine that runs the file needs nothing.</p>
           </div>
         </li>
 
         <li class="step" data-step>
-          <span class="step-no" aria-hidden="true">2</span>
+          <span class="step-no" aria-hidden="true">3</span>
           <svg class="picto" viewBox="0 0 200 150" aria-hidden="true">
             <!-- A figure carrying the one file to a server. -->
             <circle cx="40" cy="30" r="12" class="ink-fill"/>
@@ -168,13 +172,18 @@ export PATH="$HOME/ampoule:$PATH"</code></pre>
           <div class="step-body">
             <h2 class="step-title">Copy the one file over. Run it.</h2>
             <div class="plate">
-              <pre class="cmd"><code data-ship><span class="p">$</span> scp _build/prod/ampoule/my_app-x86_64-linux server:
-<span class="p">$</span> ssh server ./my_app-x86_64-linux start</code></pre>
-              <button class="copy" type="button" data-copy="[data-ship]">
-                <svg aria-hidden="true"><use href="#icon-copy"/></svg>
-                <span data-copy-label>Copy</span>
-              </button>
+              <pre class="cmd"><code data-ship><span class="p">$</span> scp \
+  _build/prod/ampoule/<wbr><span class="keep">my_app-x86_64-linux \</span>
+  server:
+<span class="p">$</span> ssh server \
+  DATABASE_URL=… \
+  <span class="keep">./my_app-x86_64-linux serve</span></code></pre>
+                <button class="copy" type="button" data-copy="[data-ship]" aria-label="Copy the copy and run commands">
+                  <svg aria-hidden="true"><use href="#icon-copy"/></svg>
+                  <span data-copy-label>Copy</span>
+                </button>
             </div>
+            <p class="needs">Configure it with environment variables, as any release. <code>serve</code> starts the app, after the steps <code>ampoule.toml</code> lists first, such as migrations.</p>
             <p class="done"><svg aria-hidden="true"><use href="#ok"/></svg> That is the whole assembly.</p>
           </div>
         </li>
@@ -244,7 +253,7 @@ _build/prod/ampoule/my_app-aarch64-darwin (11.8 MiB)
             <div class="fit-text">
               <h4>Start it, call into it</h4>
               <p>The file takes the release script’s commands: <code>start</code>, <code>eval</code>, and any you add.</p>
-              <p>If the app migrates a database before it starts, put the order in <code>ampoule.toml</code> at the project root. Packing stores it in the file.</p>
+              <p>If the app migrates a database before it starts, put the order in <code>ampoule.toml</code> at the project root, before you pack; packing stores it in the file. A Phoenix app gets <code>MyApp.Release</code> from <code>mix phx.gen.release</code>.</p>
             </div>
             <div class="fit-code">
               <pre class="cmd"><code><span class="p">$</span> ./my_app-aarch64-darwin start
@@ -303,7 +312,7 @@ CMD ["start"]</code></pre>
           <article class="fit">
             <div class="fit-text">
               <h4>For every platform, from one machine</h4>
-              <p>Each platform’s file starts from that platform’s runtime, <code>ampoule-&lt;target&gt;</code> from a release, kept next to <code>ampoule</code>. Step 1 fetches it when you pick a different machine to run on; name each target to pack.</p>
+              <p>Each platform’s file starts from that platform’s runtime, <code>ampoule-&lt;target&gt;</code> from a release, kept next to <code>ampoule</code>. The installer in step 1 puts every platform’s runtime there; name each target to pack.</p>
             </div>
             <div class="fit-code">
               <pre class="cmd"><code><span class="p">$</span> ampoule release --target aarch64-darwin \
@@ -503,10 +512,10 @@ allow = ["uname", "/bin/sh"]</code></pre>
 
   <footer class="back">
     <div class="back-cmd">
-      <span class="step-no" aria-hidden="true">1</span>
+      <span class="step-no" aria-hidden="true">2</span>
       <div class="plate">
         <pre class="cmd"><code data-again><span class="p">$</span> ampoule release</code></pre>
-        <button class="copy" type="button" data-copy="[data-again]">
+        <button class="copy" type="button" data-copy="[data-again]" aria-label="Copy the pack command">
           <svg aria-hidden="true"><use href="#icon-copy"/></svg>
           <span data-copy-label>Copy</span>
         </button>
@@ -519,6 +528,7 @@ allow = ["uname", "/bin/sh"]</code></pre>
       <a href="https://github.com/filipecabaco/ampoule">GitHub</a>
       <a href="https://github.com/filipecabaco/ampoule/tree/main/docs#readme">Docs</a>
       <a href="https://github.com/filipecabaco/ampoule#readme">README</a>
+      <a href="llms.txt">llms.txt</a>
       <a href="https://github.com/filipecabaco/ampoule/blob/main/CONTRIBUTING.md">Contributing</a>
       <a href="https://github.com/filipecabaco/ampoule/blob/main/LICENSE">Apache-2.0</a>
     </p>
