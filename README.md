@@ -83,6 +83,20 @@ host = "$PWD"
   cache](docs/reference/runtime.md)
 - [Limitations](docs/limitations.md) and [how it works](docs/how-it-works.md)
 
+## For agents
+
+The [`ampoule` skill](skills/ampoule/SKILL.md) teaches a coding agent to pack, configure, run and
+debug an app with ampoule. In Claude Code (2.1.275 or later):
+
+```text
+/plugin install ampoule --marketplace filipecabaco/ampoule
+```
+
+On earlier versions, `/plugin marketplace add filipecabaco/ampoule`, then `/plugin install
+ampoule@ampoule`. Other agents can copy `skills/ampoule/` into their skills directory. The site
+serves [`llms.txt`](https://filipecabaco.github.io/ampoule/llms.txt), an index of these docs as raw
+markdown.
+
 ## Examples
 
 [`examples/`](examples) has complete apps, each with an end-to-end suite that packs the app, runs

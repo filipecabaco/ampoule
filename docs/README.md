@@ -28,6 +28,12 @@ Each guide covers one kind of app or one task, from `ampoule.toml` to the comman
 | [Limitations](limitations.md) | what differs from a native release |
 | [How it works](how-it-works.md) | the binary's layout and how the runtime starts |
 
+## For agents
+
+The [`ampoule` skill](../skills/ampoule/SKILL.md) condenses these pages for a coding agent, with a
+troubleshooting table, and [`llms.txt`](https://filipecabaco.github.io/ampoule/llms.txt) lists
+them as raw markdown. The [README](../README.md#for-agents) has the install line.
+
 ## Examples
 
 [`examples/`](../examples) has complete apps, each with an end-to-end suite that packs the app,

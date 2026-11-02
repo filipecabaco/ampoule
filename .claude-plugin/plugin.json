@@ -1,0 +1,11 @@
+{
+  "name": "ampoule",
+  "description": "Pack a Mix release into one executable with ampoule, configure ampoule.toml, and run or debug the packed binary.",
+  "author": {
+    "name": "Filipe Cabaco"
+  },
+  "homepage": "https://filipecabaco.github.io/ampoule/",
+  "repository": "https://github.com/filipecabaco/ampoule",
+  "license": "Apache-2.0",
+  "keywords": ["elixir", "erlang", "beam", "release", "webassembly", "packaging"]
+}
