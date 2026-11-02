@@ -9,6 +9,7 @@
 //! memory_alarm = 80              # set system_memory_high_watermark at this % of the VM's memory limit
 //! native_cache = "off"           # keep the compiled engine between starts: "auto" (default), "off", or a directory
 //! home = "host"                  # the app's home is the host's HOME, not its private /tmp
+//! main = "MyCli.main"             # `<binary> ARGS...` calls it; the runtime's commands move behind `--vm`
 //!
 //! [commands]                       # extra commands: `<binary> migrate` evaluates the expression
 //! migrate = "MyApp.Release.migrate()"
@@ -200,6 +201,36 @@ pub fn parse_home(s: &str) -> Result<bool> {
     }
 }
 
+/// `main`, as the runtime runs it.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Main<'a> {
+    /// `MyCli.main` or `my_cli:main`: called directly, with no Elixir parser or evaluator. `module`
+    /// is the atom's text (`Elixir.MyCli`).
+    Call { module: String, function: &'a str },
+    /// Anything else, such as `MyCli.main(:fast)`: evaluated, as a `[commands]` entry is.
+    Eval(&'a str),
+}
+
+/// `main` as a direct call when it names a function (`Mod.Sub.fun`, `mod:fun`), else an expression.
+pub fn parse_main(s: &str) -> Main<'_> {
+    let s = s.trim();
+    let atom = |a: &str, first: fn(char) -> bool| a.chars().next().is_some_and(first) && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '@');
+    let function = |f: &str| {
+        let base = f.strip_suffix(['?', '!']).unwrap_or(f);
+        base.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c == '_') && base.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    if let Some((module, fun)) = s.split_once(':') {
+        if atom(module, |c| c.is_ascii_lowercase()) && atom(fun, |c| c.is_ascii_lowercase()) {
+            return Main::Call { module: module.to_string(), function: fun };
+        }
+    } else if let Some((module, fun)) = s.rsplit_once('.') {
+        if function(fun) && module.split('.').all(|p| atom(p, |c| c.is_ascii_uppercase()) && !p.contains('@')) {
+            return Main::Call { module: format!("Elixir.{module}"), function: fun };
+        }
+    }
+    Main::Eval(s)
+}
+
 /// `[distribution]`: see `dist`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -263,6 +294,9 @@ pub struct Config {
     pub home: Option<String>,
     #[serde(default)]
     pub mounts: Vec<Mount>,
+    /// The app's own command line: `<binary> ARGS...` runs it with every argument (see `parse_main`).
+    #[serde(default)]
+    pub main: Option<String>,
 }
 
 impl Config {
@@ -287,6 +321,9 @@ impl Config {
         }
         if let Some(h) = &cfg.home {
             parse_home(h).with_context(|| format!("{}: home", path.display()))?;
+        }
+        if cfg.main.as_deref().is_some_and(|m| m.trim().is_empty()) {
+            bail!("{}: main is empty", path.display());
         }
         for m in &cfg.mounts {
             m.check().with_context(|| format!("{}: [[mounts]]", path.display()))?;
@@ -414,6 +451,9 @@ pub struct Manifest {
     /// `[[mounts]]` from ampoule.toml, not yet expanded.
     #[serde(default)]
     pub mounts: Vec<Mount>,
+    /// `main` from ampoule.toml.
+    #[serde(default)]
+    pub main: Option<String>,
 }
 
 impl Manifest {
@@ -442,6 +482,7 @@ impl Manifest {
             native_cache: cfg.native_cache,
             home: cfg.home,
             mounts: cfg.mounts,
+            main: cfg.main,
         }
     }
 }
@@ -631,6 +672,23 @@ mod tests {
         assert!(load("[[mounts]]\nhost = \"${PWD\"\n").is_err());
         assert!(load("[[mounts]]\nguest = \"/x\"\n").is_err());
         assert!(load("[[mounts]]\nhost = \"/x\"\nmode = \"rw\"\n").is_err());
+    }
+
+    #[test]
+    fn main_names_a_function_or_is_an_expression() {
+        let call = |m: &str, f| Main::Call { module: m.to_string(), function: f };
+        assert_eq!(parse_main("MyCli.main"), call("Elixir.MyCli", "main"));
+        assert_eq!(parse_main(" My.Cli2.run_it! "), call("Elixir.My.Cli2", "run_it!"));
+        assert_eq!(parse_main("my_cli:main"), call("my_cli", "main"));
+        assert_eq!(parse_main("MyCli.main()"), Main::Eval("MyCli.main()"));
+        assert_eq!(parse_main("MyCli.main(:fast)"), Main::Eval("MyCli.main(:fast)"));
+        assert_eq!(parse_main("my_cli:main()"), Main::Eval("my_cli:main()"));
+        assert_eq!(parse_main("MyCli.Main"), Main::Eval("MyCli.Main"));
+        assert_eq!(parse_main("myCli.main"), Main::Eval("myCli.main"));
+        assert_eq!(parse_main("main"), Main::Eval("main"));
+        assert_eq!(parse_main("'q':main"), Main::Eval("'q':main"));
+        assert!(load("main = \"MyCli.main\"\n").unwrap().main.is_some());
+        assert!(load("main = \" \"\n").is_err());
     }
 
     #[test]

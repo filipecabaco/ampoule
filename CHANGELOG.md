@@ -16,6 +16,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   instead of its `/tmp`, and host programs get the host's `HOME` too. With both, a packed CLI that
   works in the current directory and keeps its configuration in `~/.config` needs no wrapper
   script.
+- `main` in `ampoule.toml` (#31): the app owns the whole command line, so `my_cli pull o11y/x`
+  needs no command word. A function name (`MyCli.main`, `my_cli:main`) is called directly, as an
+  escript's `main` is, without the Elixir parser and evaluator: about 7 ms (6%) faster to start
+  than the same function as a custom command. Any other `main` is evaluated as a `[commands]` entry.
+- `--vm` as the first argument reaches the runtime's own commands and options (`my_cli --vm info`,
+  `my_cli --vm start`). It works whether or not the app sets `main`.
 
 ### Changed
 
@@ -23,6 +29,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   cache file against its SHA-256, and sha2 0.10 used the ARMv8 SHA instructions only with its `asm`
   feature: it hashed the 17 MiB engine in software, in about 60 ms. sha2 0.11 detects the
   instructions at run time, and the check takes about 10 ms. x86_64 already used SHA-NI.
+- In a release without Elixir, `eval`, `[commands]` entries and `rpc` take about 75 ms instead of
+  about 1.08 s: they end with `halt()`, not `init:stop()`. Under the runtime, `init:stop()` waited a
+  full second in kernel's `user_sup` before it killed the user process. Elixir releases already
+  halted.
 
 ## [0.1.11] - 2026-11-01
 

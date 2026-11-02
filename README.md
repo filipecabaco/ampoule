@@ -198,8 +198,13 @@ it; currently OTP 28, ERTS 16). `pack` refuses a mismatch.
 ### Running the packed app
 
 ```
-<binary> [options] <command> [args...]
+<binary> [--vm] [options] <command> [args...]
+<binary> [args...]                               # with `main` in ampoule.toml
 ```
+
+With [`main`](#a-cli-with-its-own-command-line), every argument belongs to the app; `--vm` as the
+first argument reaches the commands and options below. `--vm` works without `main` too, so a
+script that uses it does not depend on how the binary was packed.
 
 | Command | |
 |---|---|
@@ -273,6 +278,7 @@ restart = "on-failure"           # start the VM again when it fails (a crash, ou
 memory_alarm = 80                # memory alarm at this % of the VM's memory limit (0: off)
 native_cache = "auto"            # keep the compiled engine between starts: "auto", "off", or a directory
 home = "host"                    # the app's home is the host's HOME (default: "private", its /tmp)
+main = "MyCli.main"              # `<binary> ARGS...` runs the app's own command line (see below)
 
 [commands]                       # `<binary> migrate` evaluates the expression
 migrate = "MyApp.Release.migrate()"
@@ -530,6 +536,30 @@ create = true
 `HOME`. The app then finds `~/.config/my_cli` at the path the user knows. The home directory itself
 is not mounted: only what `[[mounts]]` or `--mount` provide is visible. [Host
 programs](#host-programs) get the host's `HOME` too, so `gh` or `git` find their configuration.
+
+#### A CLI with its own command line
+
+With `main`, the binary is the CLI: `my_cli pull o11y/x` instead of `my_cli cli pull o11y/x`.
+
+```toml
+home = "host"
+main = "MyCli.main"
+
+[[mounts]]
+host = "$PWD"
+```
+
+- Every argument goes to the app, `help`, `--help` and none at all included. The runtime's own
+  commands and options move behind `--vm`: `my_cli --vm info`, `my_cli --vm --mount ~/x:/x eval
+  'IO.puts(1)'`, `my_cli --vm start`. The `AMPOULE_*` variables apply as before.
+- A function name, `MyCli.main` (or `my_cli:main` in an Erlang release), is called directly, as an
+  escript's `main` is: the Elixir CLI, tokenizer, parser and evaluator that `--eval` loads stay
+  unloaded, and the app starts sooner. With arity 1 it gets the arguments, as binaries (strings in
+  Erlang); with arity 0 it reads `System.argv()` (`init:get_plain_arguments()`). An exception is
+  printed as Elixir prints one and exits with status 1; `at_exit` hooks run; returning exits with 0.
+- Anything else, such as `MyCli.main(:fast)`, is evaluated as a `[commands]` entry is.
+- `serve` steps run behind `--vm`, so a binary with `main` can still `--vm serve` or `--vm start`.
+- `--vm info` shows `main`; `--vm help` prints the runtime's usage.
 
 ### What the app sees
 
