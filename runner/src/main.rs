@@ -457,9 +457,14 @@ fn app_usage(m: &Manifest) -> ! {
             config::Step::When { run, when } => format!("{run} (when {when})"),
         })
         .collect();
+    let prog = std::env::args_os().next().map(|a| a.to_string_lossy().into_owned()).unwrap_or_else(|| m.name.clone());
+    let usage = match &m.main {
+        Some(main) => format!("[args...]   (runs {main})\n       {prog} --vm [options] <command> [args...]"),
+        None => "[--vm] [options] <command> [args...]".to_string(),
+    };
     eprintln!(
         "{} {} (ampoule {VERSION}, {TARGET})\n\
-         \nusage: {} [options] <command> [args...]\n\
+         \nusage: {prog} {usage}\n\
          \ncommands:\
          \n  start                  start the release\
          \n  serve                  {}\
@@ -469,7 +474,8 @@ fn app_usage(m: &Manifest) -> ! {
          \n  vm -- ERL_ARGS         run the VM with raw erl arguments (release at {APP})\
          \n  info                   what is packed{custom}\
          \n\nThe ARGS after eval's expression, or after a command below, reach the app as\
-         \nSystem.argv() (init:get_plain_arguments() without Elixir).\
+         \nSystem.argv() (init:get_plain_arguments() without Elixir). With --vm first, the\
+         \nrest is always this command line, also when the app has its own (main).\
          \n\noptions (or AMPOULE_* environment variables):\
          \n  --listen PORTS         AMPOULE_LISTEN       ports the app may bind, e.g. 4000,4001 (default: any)\
          \n  --port-map G:H,...     AMPOULE_PORT_MAP     bind app port G as host port H\
@@ -498,7 +504,6 @@ fn app_usage(m: &Manifest) -> ! {
          \n  --env KEY=VALUE                               set an app environment variable",
         m.name,
         m.vsn,
-        std::env::args_os().next().map(|a| a.to_string_lossy().into_owned()).unwrap_or_else(|| m.name.clone()),
         serve.join(", then ")
     );
     std::process::exit(2)
@@ -644,6 +649,16 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         }
     }
 
+    // `--vm` first: the runtime's own command line, even when `main` owns the rest.
+    let vm_flag = args.first().is_some_and(|a| a == "--vm");
+    let args = if vm_flag { &args[1..] } else { args };
+    if let Some(main) = m.main.as_deref().filter(|_| !vm_flag) {
+        o.dist.check()?;
+        o.policy.exec = spawn::Exec::resolve(&o.allow_exec, &std::env::var("PATH").unwrap_or_default());
+        apply_packed_paths(m, &mut o, &std::env::var("HOME").unwrap_or_default())?;
+        std::process::exit(run_vm(&app, &o, main_args(m, main, args), BTreeMap::new())?)
+    }
+
     let mut i = 0;
     let cmd = loop {
         let Some(arg) = args.get(i) else { app_usage(m) };
@@ -665,7 +680,9 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         "help" | "-h" => app_usage(m),
         "info" => return info(&app),
         "serve" => {
+            // `--vm`: each step is a runtime command, also when `main` is set.
             let mut prefix = app.reinvoke.clone();
+            prefix.push("--vm".into());
             prefix.extend(args[..i].iter().cloned());
             return serve(m, &prefix);
         },
@@ -782,7 +799,7 @@ fn start_args(m: &Manifest, o: &RunOpts) -> Vec<String> {
 /// (what followed the command) as the app's arguments: `System.argv()` for Elixir, after
 /// `--` as `elixir` takes them; `init:get_plain_arguments()` without, after `-extra`.
 fn eval_args(m: &Manifest, expr: &str, argv: &[String]) -> Vec<String> {
-    let mut tail: Vec<&str> = if m.elixir { vec!["-extra", "--eval", expr, "--"] } else { vec!["-eval", expr, "-s", "init", "stop"] };
+    let mut tail: Vec<&str> = if m.elixir { vec!["-extra", "--eval", expr, "--"] } else { [&["-eval", expr][..], &ERL_HALT].concat() };
     if !argv.is_empty() {
         if !m.elixir {
             tail.push("-extra");
@@ -790,6 +807,50 @@ fn eval_args(m: &Manifest, expr: &str, argv: &[String]) -> Vec<String> {
         tail.extend(argv.iter().map(String::as_str));
     }
     release_args(m, "start_clean", "vm.args", &tail)
+}
+
+/// `main` with every argument: a function called directly, as an escript's main is, without the
+/// Elixir CLI, tokenizer, parser and evaluator that `--eval` loads; any other `main` evaluated as
+/// a `[commands]` entry is. The function takes the arguments if it has arity 1 (binaries for
+/// Elixir, strings for Erlang), else reads them (`System.argv()`, `init:get_plain_arguments()`).
+fn main_args(m: &Manifest, main: &str, argv: &[String]) -> Vec<String> {
+    let config::Main::Call { module, function } = config::parse_main(main) else { return eval_args(m, main, argv) };
+    let (module, function) = (erl_atom(&module), erl_atom(function));
+    let call = format!(
+        "_ = code:ensure_loaded({module}), case erlang:function_exported({module}, {function}, 1) of \
+         true -> {module}:{function}(Args); false -> {module}:{function}() end"
+    );
+    let eval = if m.elixir {
+        // What `elixir start_cli` does before its CLI, then `Kernel.CLI.run/1` as escripts use it:
+        // errors printed as Elixir prints them, at_exit hooks, and the exit status.
+        format!(
+            "{{ok, _}} = application:ensure_all_started(elixir), \
+             _ = case code:ensure_loaded('Elixir.Logger') of {{module, _}} -> application:start(logger); _ -> ok end, \
+             Args = [unicode:characters_to_binary(A) || A <- init:get_plain_arguments()], \
+             'Elixir.System':argv(Args), \
+             'Elixir.Kernel.CLI':run(fun(_) -> {call} end)."
+        )
+    } else {
+        format!("Args = init:get_plain_arguments(), {call}.")
+    };
+    let mut tail: Vec<&str> = vec!["-eval", &eval];
+    if !m.elixir {
+        tail.extend(ERL_HALT);
+    }
+    if !argv.is_empty() {
+        tail.push("-extra");
+        tail.extend(argv.iter().map(String::as_str));
+    }
+    let mut a = release_args(m, "start_clean", "vm.args", &tail);
+    if let Some(at) = a.windows(3).position(|w| w == ["-s", "elixir", "start_cli"]) {
+        a.drain(at..at + 3);
+    }
+    a
+}
+
+/// An atom as Erlang source: quoted, so `valid?` and `Elixir.MyCli` need no special case.
+fn erl_atom(s: &str) -> String {
+    format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
 /// The erl arguments the release's own start script would pass, plus the overlay the runtime
@@ -829,7 +890,7 @@ fn client_args(m: &Manifest, target: &str, expr: Option<&str>) -> Vec<String> {
         (Some(expr), true) => a.extend(["-extra", "--rpc-eval", target, expr].map(String::from)),
         (Some(expr), false) => {
             // Plain arguments rather than a string in the code, so the expression needs no quoting.
-            a.extend(["-eval".to_string(), ERL_RPC_EVAL.to_string(), "-s".into(), "init".into(), "stop".into(), "-extra".into(), target.into(), expr.into()])
+            a.extend(["-eval", ERL_RPC_EVAL].into_iter().chain(ERL_HALT).chain(["-extra", target, expr]).map(String::from))
         },
         (None, true) => {
             // iex runs `elixir --erl "-user elixir" +iex`: IEx starts as the user process instead of
@@ -846,6 +907,12 @@ fn client_args(m: &Manifest, target: &str, expr: Option<&str>) -> Vec<String> {
     }
     a
 }
+
+/// How a one-off Erlang VM (`eval`, a `[commands]` entry, `main`, `rpc`) ends once its expression
+/// returns: `halt()`, which flushes the output, not `init:stop()`. Nothing but kernel and stdlib
+/// runs on that non-booted release, and `init:stop()` costs a second more here: kernel's user_sup
+/// waits 1000 ms in its `terminate/2` before it kills the user process.
+const ERL_HALT: [&str; 3] = ["-s", "erlang", "halt"];
 
 /// `rpc` for a release without Elixir: the node and the expression come as plain arguments.
 const ERL_RPC_EVAL: &str = r#"[Node, Expr] = init:get_plain_arguments(),
@@ -884,6 +951,9 @@ fn info(app: &App) -> Result<()> {
         Image::Dir(d) => println!("files:     {} (not packed)", d.display()),
     }
     println!("runtime:   ampoule {VERSION} for {TARGET}, ERTS {ERTS_VSN} (release built for {})", m.erts_vsn);
+    if let Some(main) = &m.main {
+        println!("main:      {main} (the runtime's commands: --vm <command>)");
+    }
     if !m.commands.is_empty() {
         println!("commands:  {}", m.commands.keys().cloned().collect::<Vec<_>>().join(", "));
     }
@@ -1463,10 +1533,35 @@ mod tests {
                 assert!(without.ends_with(&["--eval", "M.run()", "--"].map(String::from)));
             } else {
                 // init makes what follows -extra its plain arguments.
-                assert!(with.ends_with(&["-eval", "M.run()", "-s", "init", "stop", "-extra", "pull", "o11y/x", "--force"].map(String::from)));
-                assert!(without.ends_with(&["-s", "init", "stop"].map(String::from)) && !without.contains(&"-extra".to_string()));
+                assert!(with.ends_with(&["-eval", "M.run()", "-s", "erlang", "halt", "-extra", "pull", "o11y/x", "--force"].map(String::from)));
+                assert!(without.ends_with(&["-s", "erlang", "halt"].map(String::from)) && !without.contains(&"-extra".to_string()));
             }
         }
+    }
+
+    #[test]
+    fn main_calls_a_function_without_the_elixir_cli() {
+        let argv = ["pull", "--force"].map(String::from);
+        let rel = ReleaseInfo { name: "app".into(), vsn: "0.1.0".into(), erts_vsn: "16.4".into(), elixir: true };
+        let m = Manifest::new(&rel, Config::default());
+        let a = main_args(&m, "MyCli.main", &argv);
+        assert!(!a.contains(&"start_cli".to_string()) && !a.contains(&"--eval".to_string()));
+        assert!(a.ends_with(&["-extra", "pull", "--force"].map(String::from)));
+        let eval = &a[a.iter().position(|x| x == "-eval").unwrap() + 1];
+        assert!(eval.contains("'Elixir.Kernel.CLI':run(") && eval.contains("'Elixir.MyCli':'main'(Args)"));
+        assert!(eval.contains("'Elixir.System':argv(Args)") && eval.contains("application:ensure_all_started(elixir)"));
+        // No arguments: no -extra, so init's plain arguments are empty.
+        assert!(!main_args(&m, "MyCli.main", &[]).contains(&"-extra".to_string()));
+        // An expression is evaluated as a [commands] entry.
+        assert_eq!(main_args(&m, "MyCli.main(:fast)", &argv), eval_args(&m, "MyCli.main(:fast)", &argv));
+
+        let rel = ReleaseInfo { elixir: false, ..rel };
+        let m = Manifest::new(&rel, Config::default());
+        let a = main_args(&m, "my_cli:main", &argv);
+        let eval = &a[a.iter().position(|x| x == "-eval").unwrap() + 1];
+        assert!(eval.starts_with("Args = init:get_plain_arguments(),") && eval.contains("'my_cli':'main'()"));
+        assert!(a.ends_with(&["-s", "erlang", "halt", "-extra", "pull", "--force"].map(String::from)));
+        assert_eq!(erl_atom("valid?"), "'valid?'");
     }
 
     #[test]
