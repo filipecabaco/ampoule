@@ -95,9 +95,9 @@ Other tasks:
   aborts the VM.
 - Clustering: `./my_app --node my_app@10.0.0.5 start` with `RELEASE_COOKIE` set. No epmd is
   started; every node listens on port 9100 by default.
-- Another platform: `ampoule release --target x86_64-linux`. It needs `ampoule-<target>` next to
-  `ampoule`; the install script adds every platform's. After a manual install, download it:
-  `curl -fLo ~/ampoule/ampoule-x86_64-linux https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-x86_64-linux`.
+- Another platform: `ampoule release --target x86_64-linux`. It uses `ampoule-<target>` from next
+  to `ampoule` (the install script adds every platform's); without one, packing downloads it from
+  `ampoule`'s own release with `curl`, checks its checksum and caches it.
 - A container: `FROM scratch`, copy the Linux binary in, `ENTRYPOINT ["/my_app"]`,
   `CMD ["start"]`. Add CA certificates if the app makes TLS connections.
 
@@ -127,6 +127,7 @@ Other tasks:
 | a file or directory the app needs gives `:enoent` | not visible in the sandbox: add a `[[mounts]]` entry or `--mount HOST:GUEST` |
 | relative paths resolve under `/` | the app starts in `/`: `File.cd(System.get_env("PWD"))` with a `$PWD` mount |
 | the app cannot bind a port | the port is not in `[network] listen` / `--listen` |
+| `no runtime for <target>: ... could not download ...` | packing could not fetch the runtime: check the network and that `curl` is on `PATH`, or put `ampoule-<target>` from the same release next to `ampoule` (`AMPOULE_NO_FETCH=1` means it never downloads) |
 | `... is not the runtime of this ampoule ...: use ampoule-<target> from the same release` | the lean runtime next to `ampoule` is from another version: replace it with the one from the same release, or pass `--stub <target>=FILE` |
 | packing refuses the release's ERTS | the release was built with another OTP major: build it with OTP 28 |
 | NIF build fails or wrong LLVM | install wasi-sdk 34 next to `ampoule` (as `wasi-sdk/`) or set `AMPOULE_WASI_SDK`; keep `kit/` next to `ampoule` or set `AMPOULE_KIT` |

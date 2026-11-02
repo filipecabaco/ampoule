@@ -312,7 +312,7 @@ CMD ["start"]</code></pre>
           <article class="fit">
             <div class="fit-text">
               <h4>For every platform, from one machine</h4>
-              <p>Each platform’s file starts from that platform’s runtime, <code>ampoule-&lt;target&gt;</code> from a release, kept next to <code>ampoule</code>. The installer in step 1 puts every platform’s runtime there; name each target to pack.</p>
+              <p>Each platform’s file starts from that platform’s runtime, <code>ampoule-&lt;target&gt;</code> from a release, kept next to <code>ampoule</code>. The installer in step 1 puts every platform’s runtime there, and packing downloads one that is missing from the same release; name each target to pack.</p>
             </div>
             <div class="fit-code">
               <pre class="cmd"><code><span class="p">$</span> ampoule release --target aarch64-darwin \
