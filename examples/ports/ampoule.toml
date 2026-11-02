@@ -1,4 +1,4 @@
-# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+# Packed into the binary by `ampoule release`. docs/reference/configuration.md has every key.
 
 [process]
 # The only programs the app itself may start. /bin/sh runs :os.cmd/1 and the long-running port

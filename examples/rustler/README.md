@@ -12,8 +12,8 @@ _build/prod/ampoule/textkit-<target> eval 'IO.puts(TextKit.slugify("Hello, World
 _build/prod/ampoule/textkit-<target> demo                # a custom command from ampoule.toml
 ```
 
-Building NIFs needs wasi-sdk and the engine kit (`AMPOULE_WASI_SDK`, `AMPOULE_KIT`; see the
-main README).
+Packing needs wasi-sdk 34 and the NIF kit, which the release archives include; see
+[NIFs](../../docs/guides/nifs.md) for where `ampoule` looks for them.
 
 - `native/textkit/src/lib.rs`: plain Rustler NIFs, a dirty-CPU NIF, a pure-Rust dependency (`sha2`),
   and a `Result` that becomes `{:ok, _}` / `{:error, _}`.

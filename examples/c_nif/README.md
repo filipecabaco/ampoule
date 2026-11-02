@@ -15,7 +15,8 @@ _build/prod/ampoule/checksum-<target> eval 'IO.puts(Checksum.crc32("hello"))'
   of the project with `CC` pointing at its wasm compiler, which turns the same commands into a wasm
   archive linked into the engine.
 
-Packing needs wasi-sdk 34 (see the ampoule README, NIFs); running needs nothing.
+Packing needs wasi-sdk 34 and the NIF kit, which the release archives include (see
+[NIFs](../../docs/guides/nifs.md)); running needs nothing.
 
 ## Tests
 

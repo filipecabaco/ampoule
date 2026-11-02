@@ -1,4 +1,4 @@
-# Packed into the binary by `ampoule release`. See the ampoule README for every key.
+# Packed into the binary by `ampoule release`. docs/reference/configuration.md has every key.
 
 [network]
 listen = [4000]   # the only port the app may bind; map it with --port-map 4000:8080
