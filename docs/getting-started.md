@@ -17,8 +17,9 @@ ampoule version
 ```
 
 The archive holds `ampoule`, the lean runtime `ampoule-<target>` that packed apps start from, the
-NIF kit (`kit/`), LICENSE and NOTICE; the macOS archives also hold the iOS runtime (`ios/`). Keep
-them together: `ampoule` looks for the runtime, `kit/` and `ios/` next to itself.
+NIF kit (`kit/`), LICENSE, NOTICE, README.md and this documentation (`docs/`). The macOS
+archives also hold the iOS runtime (`ios/`). Keep them together: `ampoule` looks for the
+runtime, `kit/` and `ios/` next to itself.
 `ampoule-<version>-<target>.tar.gz` is the same archive for one version, unpacking to
 `ampoule-<version>-<target>/`.
 

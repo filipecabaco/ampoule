@@ -101,7 +101,7 @@ publishes a GitHub release with:
 
 - `ampoule-<version>-<target>.tar.gz` per target, and the same archive as `ampoule-<target>.tar.gz`
   unpacking to `ampoule/`. Each holds `ampoule`, the lean runtime `ampoule-<target>`, `kit/`,
-  LICENSE, NOTICE and README.md; the macOS ones also hold `ios/`.
+  LICENSE, NOTICE, README.md and `docs/`; the macOS ones also hold `ios/`.
 - the lean runtime on its own as `ampoule-<target>`, for packing for another target.
 - `SHA256SUMS`.
 
