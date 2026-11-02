@@ -38,6 +38,14 @@ jobs:
           components: clippy, rustfmt
           targets: wasm32-wasip1-threads
 
+      # The Rust cache unpacks to several GB; on the hosted Ubuntu image that has filled the disk
+      # during its restore. The image's .NET, Android and GHC toolchains are never used here.
+      - name: Free disk space
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
+
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: runner
