@@ -1,6 +1,6 @@
 ---
 name: ampoule
-description: The two-step assembly sheet; the visual system of the landing site in site/.
+description: The three-step assembly sheet; the visual system of the landing site in site/.
 colors:
   elixir-purple: "#4e2a8e"
   wasm-blue: "#654ff0"
@@ -60,7 +60,6 @@ rounded:
   part: "4px"
   plate: "6px"
   panel: "8px"
-  chip: "999px"
 spacing:
   gutter: "clamp(1rem, 4vw, 3rem)"
   sheet: "clamp(3rem, 6vw, 5rem)"
@@ -73,15 +72,6 @@ components:
   button-copy-hover:
     backgroundColor: "{colors.wasm-blue}"
     textColor: "{colors.sheet-white}"
-  chip-target:
-    backgroundColor: "{colors.sheet-white}"
-    textColor: "{colors.drawing-ink}"
-    rounded: "{rounded.chip}"
-    padding: "0.3rem 0.75rem"
-  chip-target-checked:
-    backgroundColor: "{colors.wasm-blue}"
-    textColor: "{colors.sheet-white}"
-    rounded: "{rounded.chip}"
   command-plate:
     backgroundColor: "{colors.sheet-white}"
     textColor: "{colors.drawing-ink}"
@@ -105,7 +95,7 @@ components:
 
 ## Overview
 
-**Creative North Star: "The Two-Step Assembly Sheet."** The site is the shortest assembly manual ever printed: one part, two steps. It borrows the grammar of wordless flat-pack instructions (circled step numerals at impact scale, pictogram figures drawn in heavy uniform strokes, an exploded drawing with callouts, a spec sheet) and refuses the category default of a dark terminal hero over a feature grid.
+**Creative North Star: "The Three-Step Assembly Sheet."** The site is the shortest assembly manual ever printed: one part, three steps (download, pack, run). It borrows the grammar of wordless flat-pack instructions (circled step numerals at impact scale, pictogram figures drawn in heavy uniform strokes, an exploded drawing with callouts, a spec sheet) and refuses the category default of a dark terminal hero over a feature grid.
 
 The page is a white sheet ruled into panels by 3px ink lines. Elixir purple owns one whole panel, the cover, so a visitor reads "Elixir" before a word is parsed; WebAssembly blue marks the one file and every active state. Everything else is black ink on white.
 
@@ -115,13 +105,13 @@ Tone is plain and positive. The page shows what ampoule does; it never sets ampo
 
 ### Primary
 - **Elixir Purple** (`#4e2a8e`): the cover panel, drenched. Also the `$` prompt in commands, list markers and link underlines. It is the colour of the language this is for.
-- **WebAssembly Blue** (`#654ff0`): the one file (border and ×1 tab of the part card, the release-image section of the drawing) and every active state: the checked target chip, copy hover, selection, focus halo, a finished step's numeral.
+- **WebAssembly Blue** (`#654ff0`): the one file (border and ×1 tab of the part card, the release-image section of the drawing) and every active state: copy hover, selection, focus halo, a finished step's numeral.
 
 ### Neutral
 - **Sheet White** (`#ffffff`): the ground of every panel except the cover.
 - **Drawing Ink** (`#17181a`): text, rules, pictograms, numerals, the copy buttons.
 - **Ink Soft** (`#4b4c4f`): secondary text, command output, notes.
-- **Lavender Wash** (`#efeafa`): the part card, inline code, the "Works" column, hover on chips.
+- **Lavender Wash** (`#efeafa`): the part card, inline code, the "Works" column.
 - **Chart Grid** (`#e4e4e6`): the scaling chart's gridlines only, one step off the sheet so they recede behind the data.
 
 ### Named Rules
@@ -135,7 +125,7 @@ Tone is plain and positive. The page shows what ampoule does; it never sets ampo
 
 ### Hierarchy
 - **Display** (700, `clamp(4rem, 9vw, 6rem)`, line-height 0.85, -0.035em): the name on the cover, once.
-- **Numeral** (700, up to 5.25rem inside an 8rem circle with a 6px stroke): ① and ②. They outweigh every heading on the sheet.
+- **Numeral** (700, up to 5.25rem inside an 8rem circle with a 6px stroke): ①, ② and ③. They outweigh every heading on the sheet.
 - **Headline** (700, up to 2.75rem): sheet titles ("When you need more", "Before you start", "Test report").
 - **Title** (700, up to 1.9rem): step titles.
 - **Claim** (600, up to 1.75rem): the one-line offer under the name.
@@ -145,7 +135,7 @@ Tone is plain and positive. The page shows what ampoule does; it never sets ampo
 ## Layout
 
 - Masthead strip (mark, part number `AM–0061736D`, links) over a 3px rule.
-- Sheet one is a two-column grid (`0.85fr 1.35fr`): the purple cover (name, claim, part card, facts line at its foot) beside the two steps. Each step is a grid of numeral and pictogram (left) and body (right).
+- Sheet one is a two-column grid (`0.85fr 1.35fr`): the purple cover (name, claim, part card, facts line at its foot) beside the three steps. Each step is a grid of numeral and pictogram (left) and body (right).
 - Then full-width sheets, each closed by a 3px rule: the real output specimen, Before you start (limits come before anything optional), When you need more (optional fittings in three groups), the exploded drawing, the Test report (bench rig, scaling chart, measurements in the specification table's form), Specifications, and the back cover with `ampoule release` again.
 - Side gutter `clamp(1rem, 4vw, 3rem)`; sheets pad `clamp(3rem, 6vw, 5rem)` vertically.
 - Below 1020px sheet one stacks (cover on top). Below 640px each step puts the numeral and its pictogram side by side above the body, the exploded drawing switches to its vertical version, and the spec table becomes stacked rows.
@@ -156,23 +146,23 @@ Flat print. There are no shadows at rest. Depth is only line weight: 3px ink for
 
 ## Shapes
 
-Square panels, cut by full-bleed rules. Radii are small and functional: 3px inline code, 4px drawing sections, 6px command plates and the part card, 8px the specimen and the rules grid, full pill only for target chips. Circles are reserved for numerals and callouts.
+Square panels, cut by full-bleed rules. Radii are small and functional: 3px inline code, 4px drawing sections, 6px command plates and the part card, 8px the specimen and the rules grid. No pills. Circles are reserved for numerals and callouts.
 
 Pictograms are authored geometry: a filled circle head, an 18-unit body stroke, 10-unit limbs, 4-unit furniture lines, all round-capped. They are wordless and consistent; never shaded or perspectived.
 
 ## Components
 
 ### Step numeral
-A circle with a 6px ink stroke and a 700-weight digit, upright and optically centred: no letter-spacing on the single digit, and `padding-bottom: 0.13em` puts its ink within 1px of the circle's centre at every size (measured on renders; the OG card uses 12.5px at its 84px digits). Copying a step's command fills it wasm blue with a white digit; it never tilts. Only the two real steps are numbered; the back cover repeats ① at 4.75rem.
+A circle with a 6px ink stroke and a 700-weight digit, upright and optically centred: no letter-spacing on the single digit, and `padding-bottom: 0.13em` puts its ink within 1px of the circle's centre at every size (measured on renders; the OG card uses 9.8px at its 66px digits). Copying a step's command fills it wasm blue with a white digit; it never tilts. Only the three real steps are numbered; the back cover repeats ②, the pack step, at 4.75rem.
 
 ### Scaling chart
 The Test report's one chart, drawn like the sheet: a 1.5px ink axis, 1px hairline gridlines, the ideal as a dashed ink line, the measured series as the page's single blue line (2.5 units, round joins) with 5-unit blue markers ringed in white, and one direct label on the endpoint. A dotted divider marks where the performance cores end. Each marker carries a `<title>`; the table beneath carries every value. Below 640px the labels grow in chart units so they print at about 12px.
 
 ### Command plate
-A 1.5px ink outline on white, mono text, `$` prompt in Elixir purple, with the copy button docked on the right edge (ink fill, white label, copy icon); below 640px it docks under the command as a full-width bar. Long commands break with a shell `\` continuation, never mid-token. Copying takes the commands only: no `$` prompts, no output lines. Hover turns the button wasm blue. On success the label reads "Copied" and the icon becomes a check for 1.8 s; if the clipboard is refused the text is selected and the label reads "Selected". A visually hidden live region announces both.
+A 1.5px ink outline on white, mono text, `$` prompt in Elixir purple, with the copy button docked on the right edge (ink fill, white label, copy icon); below 640px it docks under the command as a full-width bar. Long commands break with a shell `\` continuation, never mid-token: the words before a `\` stay with it, and a path that still cannot fit breaks only at a `<wbr>` after a `/`. Each copy button's accessible name says what it copies. Copying takes the commands only: no `$` prompts, no output lines. Hover turns the button wasm blue. On success the label reads "Copied" and the icon becomes a check for 1.8 s; if the clipboard is refused the text is selected and the label reads "Selected". A visually hidden live region announces both.
 
-### Target chips
-Pills with a 1.5px ink outline. The checked chip is wasm blue with white text; hover is lavender wash. Two rows in step 1, each with its label on its own line above: "Pack on" (the visitor's machine, guessed from the browser: what the install downloads) and "Run on" (default Linux x86_64: the `--target`, the extra runtime download when it differs, step 2's file name and the part card's name). Every command on sheet one follows these two choices, so what the page shows always runs as written.
+### Step captions
+A plain 600-weight sentence directly above a command plate says where to run it ("In your Mix project:"), 0.4rem above the plate so the two read as one. Notes under a plate are Ink Soft at 0.9rem. The steps carry no choices: the installer finds the machine, and `--target` names the one the file runs on.
 
 ### The part card
 The single item in the inventory: lavender wash, 3px wasm-blue border, the mark at 4rem, the file name in mono, a one-sentence description, and a solid blue ×1 tab.
@@ -181,7 +171,7 @@ The single item in the inventory: lavender wash, 3px wasm-blue border, the mark 
 An inline SVG of the file: five outlined sections (4-unit ink stroke) pulled apart along a dashed axis, hairline detail inside, the release image filled wasm blue, the optional engine section dashed, dashed leaders down to circled callouts that match the numbered legend below. A vertical version replaces it on phones.
 
 ### Optional fittings
-"When you need more" holds what a visitor may add after the two steps. None is numbered: numerals belong to steps, and these are not. Three groups (Running it, Shipping it, Reaching the host), each under a 3px rule with its title in a sticky left column; inside, each fitting is one row, its title and text on the left and its command plates on the right, rows split by 1.5px hairlines. Below 1020px the group title sits above its rows; below 640px each row stacks text over code.
+"When you need more" holds what a visitor may add after the three steps. None is numbered: numerals belong to steps, and these are not. Three groups (Running it, Shipping it, Reaching the host), each under a 3px rule with its title in a sticky left column; inside, each fitting is one row, its title and text on the left and its command plates on the right, rows split by 1.5px hairlines. Below 1020px the group title sits above its rows; below 640px each row stacks text over code.
 
 ### Do / don't columns
 "Works" (lavender wash) and "Does not work" (white) inside one 3px-ruled panel, each headed by a drawn circled ✓ or ✗ symbol.

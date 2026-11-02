@@ -30,18 +30,16 @@ private `/tmp` and only the host paths, ports and programs it is given.
 
 ## Install
 
-Download the archive for your machine from the [releases
-page](https://github.com/filipecabaco/ampoule/releases): `aarch64-darwin`, `x86_64-darwin`,
-`aarch64-linux` or `x86_64-linux`.
+On macOS or Linux, arm64 or x86_64:
 
 ```sh
-curl -fsSL https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin.tar.gz | tar -xz -C ~
-export PATH="$HOME/ampoule:$PATH"
-ampoule version
+curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | sh
 ```
 
-Packing needs Elixir and Erlang/OTP 28. [Getting started](docs/getting-started.md) explains what the
-archive holds and walks through a first app.
+The [script](site/install.sh) installs into `~/ampoule` with the runtime for every platform, checks
+each file against the release's checksums, and prints the line to add to your `PATH`. Packing needs
+Elixir and Erlang/OTP 28. [Getting started](docs/getting-started.md) covers pinning a version,
+installing by hand, and a first app.
 
 ## Configure
 
@@ -82,6 +80,20 @@ host = "$PWD"
   sees](docs/reference/sandbox.md), [idle stop, memory and the engine
   cache](docs/reference/runtime.md)
 - [Limitations](docs/limitations.md) and [how it works](docs/how-it-works.md)
+
+## For agents
+
+The [`ampoule` skill](skills/ampoule/SKILL.md) teaches a coding agent to pack, configure, run and
+debug an app with ampoule. In Claude Code (2.1.275 or later):
+
+```text
+/plugin install ampoule --marketplace filipecabaco/ampoule
+```
+
+On earlier versions, `/plugin marketplace add filipecabaco/ampoule`, then `/plugin install
+ampoule@ampoule`. Other agents can copy `skills/ampoule/` into their skills directory. The site
+serves [`llms.txt`](https://filipecabaco.github.io/ampoule/llms.txt), an index of these docs as raw
+markdown.
 
 ## Examples
 

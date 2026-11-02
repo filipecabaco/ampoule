@@ -1,0 +1,31 @@
+# ampoule
+
+> ampoule packs an Elixir or Erlang (Mix) release into one executable for macOS or Linux. The binary carries the release and the BEAM compiled to WebAssembly. The machine that runs it needs no Erlang, Elixir or shared libraries. The app runs in a sandbox and sees only the host paths, ports and programs it is given. Packing needs Elixir and Erlang/OTP 28.
+
+Install with `curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | sh`; it detects the machine and adds every platform's runtime. Pack with `ampoule release` in the project root; run the binary as `bin/my_app` would be run (`start`, `eval`, custom commands). Optional settings go in `ampoule.toml`. Agents can install the ampoule skill: `/plugin install ampoule --marketplace filipecabaco/ampoule` in Claude Code, or copy `skills/ampoule/` from the repository into a skills directory.
+
+## Docs
+
+- [Getting started](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/getting-started.md): install, pack a first app, run it, iterate with `ampoule run`
+- [Deploying](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/deploy.md): a server, an empty `FROM scratch` container, packing for other platforms
+- [A web app](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/web-app.md): Phoenix and Bandit apps; migrations, ports, memory, idle stop, shutdown
+- [A CLI](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/cli.md): `main`, `[[mounts]]`, `home = "host"`, `--vm`
+- [NIFs](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/nifs.md): C, C++ and Rust dependencies rebuilt for wasm; wasi-sdk and the kit
+- [Clustering](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/cluster.md): distribution without epmd, the cookie, `remote` and `rpc`
+- [iPhone and iPad](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/ios.md): `--target ios`
+
+## Reference
+
+- [Configuration](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/reference/configuration.md): every `ampoule.toml` key
+- [Running the packed app](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/reference/running.md): commands, every option and `AMPOULE_*` variable, VM flags, signals, debugging
+- [Packaging](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/reference/packaging.md): `ampoule release`, `pack`, `run` and their options
+- [What the app sees](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/reference/sandbox.md): filesystem, network policy, host programs
+- [Idle stop, memory and the engine cache](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/reference/runtime.md)
+- [Limitations](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/limitations.md): what differs from a native release
+
+## Optional
+
+- [Skill for agents](https://raw.githubusercontent.com/filipecabaco/ampoule/main/skills/ampoule/SKILL.md): a condensed guide with a troubleshooting table
+- [How it works](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/how-it-works.md): the binary's layout and how the runtime starts
+- [Examples](https://github.com/filipecabaco/ampoule/tree/main/examples): phoenix_ecto, francis, c_nif, rustler, sqlite, ports, cluster, each with end-to-end tests
+- [Changelog](https://raw.githubusercontent.com/filipecabaco/ampoule/main/CHANGELOG.md)

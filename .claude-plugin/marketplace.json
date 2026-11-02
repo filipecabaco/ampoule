@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "ampoule",
+  "description": "The ampoule skill: pack an Elixir or Erlang release into one executable, configure it and run it.",
+  "owner": {
+    "name": "Filipe Cabaco"
+  },
+  "plugins": [
+    {
+      "name": "ampoule",
+      "source": "./",
+      "description": "Pack a Mix release into one executable with ampoule, configure ampoule.toml, and run or debug the packed binary.",
+      "category": "development",
+      "keywords": ["elixir", "erlang", "beam", "release", "webassembly", "packaging"]
+    }
+  ]
+}

@@ -18,7 +18,9 @@ migrate = "MyApp.Release.migrate()"
 PHX_SERVER = "true"
 ```
 
-`./my_app serve` runs `migrate` on a release that is not started, then starts the app.
+`MyApp.Release.migrate/0` is the module `mix phx.gen.release` generates for a Phoenix app; any
+function that runs the migrations works. `./my_app serve` runs `migrate` on a release that is not
+started, then starts the app.
 `./my_app migrate` runs the migrations on their own. A step can depend on the environment:
 `{ run = "seed", when = "SEED=true" }` runs `seed` only when `SEED` is `true`. `[start.env]`
 sets defaults for `start` only; a variable set in the real environment wins over it.
