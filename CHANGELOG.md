@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-11-02
+
 ### Added
 
 - An install script: `curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | sh` detects
