@@ -51,9 +51,9 @@ runtime, `kit/` and `ios/` next to itself.
 `ampoule-<version>-<target>.tar.gz` is the same archive for one version, unpacking to
 `ampoule-<version>-<target>/`.
 
-The bare `ampoule-<target>` on the releases page is the lean runtime on its own. Put one next to
-`ampoule` to pack for that platform (the install script adds them all). On its own it packs apps
-without NIFs:
+The bare `ampoule-<target>` on the releases page is the lean runtime on its own. Packing for a
+platform uses it from next to `ampoule`, where the install script puts them all, and otherwise
+downloads it from the same release. On its own it packs apps without NIFs:
 
 ```sh
 curl -fLo ampoule https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin && chmod +x ampoule

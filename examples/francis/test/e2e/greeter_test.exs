@@ -186,8 +186,10 @@ defmodule Greeter.E2ETest do
 
     app = PackedApp.start!(bin, args)
 
+    # Up to 60 s: on a loaded CI runner the restarted VM can take 15 s to boot, and it then holds
+    # the memory 8 s before releasing it.
     log =
-      Enum.reduce_while(1..60, "", fn _, _ ->
+      Enum.reduce_while(1..120, "", fn _, _ ->
         Process.sleep(500)
         log = PackedApp.log(app)
         if log =~ "alarm system_memory_high_watermark cleared", do: {:halt, log}, else: {:cont, log}
