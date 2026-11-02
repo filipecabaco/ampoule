@@ -2,7 +2,7 @@
 
 > ampoule packs an Elixir or Erlang (Mix) release into one executable for macOS or Linux. The binary carries the release and the BEAM compiled to WebAssembly. The machine that runs it needs no Erlang, Elixir or shared libraries. The app runs in a sandbox and sees only the host paths, ports and programs it is given. Packing needs Elixir and Erlang/OTP 28.
 
-Pack with `ampoule release` in the project root; run the binary as `bin/my_app` would be run (`start`, `eval`, custom commands). Optional settings go in `ampoule.toml`. Agents can install the ampoule skill: `/plugin install ampoule --marketplace filipecabaco/ampoule` in Claude Code, or copy `skills/ampoule/` from the repository into a skills directory.
+Install with `curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | sh`; it detects the machine and adds every platform's runtime. Pack with `ampoule release` in the project root; run the binary as `bin/my_app` would be run (`start`, `eval`, custom commands). Optional settings go in `ampoule.toml`. Agents can install the ampoule skill: `/plugin install ampoule --marketplace filipecabaco/ampoule` in Claude Code, or copy `skills/ampoule/` from the repository into a skills directory.
 
 ## Docs
 

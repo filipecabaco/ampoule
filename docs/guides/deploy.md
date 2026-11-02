@@ -34,12 +34,18 @@ them in the image.
 
 ## To another platform
 
-Packing for another platform needs that platform's lean runtime, `ampoule-<target>`, which every
-release publishes. Put it next to `ampoule` and name the target:
+Packing for another platform needs that platform's lean runtime, `ampoule-<target>`, next to
+`ampoule`. The [install script](../getting-started.md#install) puts every platform's there, so
+naming the target is enough:
+
+```sh
+ampoule release --target x86_64-linux
+```
+
+After a manual install, download the one you need from the same release first:
 
 ```sh
 curl -fLo ~/ampoule/ampoule-x86_64-linux https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-x86_64-linux
-ampoule release --target x86_64-linux
 ```
 
 `--target` repeats, and `AMPOULE_STUBS` points at a directory holding several runtimes:

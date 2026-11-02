@@ -5,6 +5,20 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- An install script: `curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | sh` detects
+  the machine, installs the release's archive into `~/ampoule`, adds every other platform's lean
+  runtime so `--target` packs for any of them offline, and checks each file against the release's
+  `SHA256SUMS`. `AMPOULE_VERSION`, `AMPOULE_HOME` and `AMPOULE_ALL_RUNTIMES=0` change what it
+  installs; it needs no sudo and edits no shell profile.
+
+### Changed
+
+- The site's steps are download, pack and run: the install one-liner, `ampoule release --target`,
+  then copying the file and running `serve`. The platform choices are gone, since the installer
+  finds the machine. The social card shows the same three steps.
+
 ## [0.1.12] - 2026-11-02
 
 ### Added

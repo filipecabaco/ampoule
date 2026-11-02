@@ -93,14 +93,14 @@
 
   .steps {
     display: grid;
-    grid-template-rows: 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
   }
 
   .step {
     display: grid;
-    grid-template-columns: 128px 1fr;
+    grid-template-columns: 104px 1fr;
     align-items: center;
-    gap: 34px;
+    gap: 30px;
     padding: 0 52px;
   }
 
@@ -111,16 +111,16 @@
   .no {
     display: grid;
     place-items: center;
-    width: 128px;
-    height: 128px;
-    border: 8px solid var(--ink);
+    width: 104px;
+    height: 104px;
+    border: 7px solid var(--ink);
     border-radius: 50%;
     box-sizing: border-box;
-    font-size: 84px;
+    font-size: 66px;
     font-weight: 700;
     line-height: 1;
     /* Puts the digit's ink on the circle's centre (measured on the render). */
-    padding-bottom: 12.5px;
+    padding-bottom: 9.8px;
   }
 
   .step:last-child .no {
@@ -130,8 +130,8 @@
   }
 
   h2 {
-    margin: 0 0 16px;
-    font-size: 38px;
+    margin: 0 0 12px;
+    font-size: 32px;
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.1;
@@ -141,8 +141,8 @@
     display: block;
     border: 3px solid var(--ink);
     border-radius: 8px;
-    padding: 14px 18px;
-    font: 500 23px/1.45 "JetBrains Mono", ui-monospace, monospace;
+    padding: 10px 16px;
+    font: 500 20px/1.45 "JetBrains Mono", ui-monospace, monospace;
     white-space: pre;
   }
 
@@ -163,12 +163,19 @@
       <div class="step">
         <span class="no">1</span>
         <div>
+          <h2>Download ampoule.</h2>
+          <code><b>$</b> curl -fsSL …/install.sh | sh</code>
+        </div>
+      </div>
+      <div class="step">
+        <span class="no">2</span>
+        <div>
           <h2>Pack your project.</h2>
           <code><b>$</b> ampoule release</code>
         </div>
       </div>
       <div class="step">
-        <span class="no">2</span>
+        <span class="no">3</span>
         <div>
           <h2>Copy the one file. Run it.</h2>
           <code><b>$</b> ./my_app-x86_64-linux start</code>

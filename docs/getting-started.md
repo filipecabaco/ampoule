@@ -5,6 +5,34 @@ Erlang/OTP 28 on the machine that packs. The machine that runs the binary needs 
 
 ## Install
 
+On macOS or Linux, arm64 or x86_64:
+
+```sh
+curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | sh
+export PATH="$HOME/ampoule:$PATH"   # the line it prints; add it to your shell's profile too
+ampoule version
+```
+
+The [install script](../site/install.sh) finds the machine's OS and CPU, downloads that release's
+archive, and adds the lean runtime of every other platform, so `ampoule release --target T` packs
+for any of them, offline once installed. It checks every file against the release's `SHA256SUMS`,
+needs no sudo and edits no shell profile. Its settings are environment variables:
+
+| Variable | Default | |
+|---|---|---|
+| `AMPOULE_VERSION` | the latest | a release to install, e.g. `0.1.12` |
+| `AMPOULE_HOME` | `~/ampoule` | where to install |
+| `AMPOULE_ALL_RUNTIMES` | `1` | `0` installs only this machine's runtime |
+
+```sh
+curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | AMPOULE_VERSION=0.1.12 sh
+```
+
+Run it again to upgrade: it replaces the files it installed. To uninstall, remove `~/ampoule` and
+the `PATH` line.
+
+### Install by hand
+
 Download the archive for your machine from the [releases
 page](https://github.com/filipecabaco/ampoule/releases). There is one for `aarch64-darwin`,
 `x86_64-darwin`, `aarch64-linux` and `x86_64-linux`. `ampoule-<target>.tar.gz` is the latest
@@ -23,7 +51,8 @@ runtime, `kit/` and `ios/` next to itself.
 `ampoule-<version>-<target>.tar.gz` is the same archive for one version, unpacking to
 `ampoule-<version>-<target>/`.
 
-The bare `ampoule-<target>` on the releases page is the lean runtime on its own. It packs apps
+The bare `ampoule-<target>` on the releases page is the lean runtime on its own. Put one next to
+`ampoule` to pack for that platform (the install script adds them all). On its own it packs apps
 without NIFs:
 
 ```sh

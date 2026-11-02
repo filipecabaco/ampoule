@@ -18,11 +18,13 @@ matches the task before giving detailed answers (see "Where to look" below).
 
 - The packing machine needs Elixir and Erlang/OTP 28. The release must be built with OTP 28,
   the runtime's major; `ampoule version` shows it, and packing refuses a mismatch.
-- Check that ampoule is installed: `ampoule version`. If not, install the archive for the machine
-  (`aarch64-darwin`, `x86_64-darwin`, `aarch64-linux`, `x86_64-linux`) and keep its files together:
+- Check that ampoule is installed: `ampoule version`. If not, install it. The script detects the
+  machine, installs into `~/ampoule` with every platform's runtime (so any `--target` works), and
+  checks each file against the release's checksums; `AMPOULE_VERSION=0.1.12` before `sh` pins a
+  release:
 
   ```sh
-  curl -fsSL https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin.tar.gz | tar -xz -C ~
+  curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | sh
   export PATH="$HOME/ampoule:$PATH"
   ```
 
@@ -51,7 +53,7 @@ A web app (Phoenix, Bandit, Francis) that migrates before it starts:
 serve = ["migrate", "start"]          # `./my_app serve`: each step is its own VM
 
 [commands]
-migrate = "MyApp.Release.migrate()"   # also `./my_app migrate` on its own
+migrate = "MyApp.Release.migrate()"   # from `mix phx.gen.release`; also `./my_app migrate`
 
 [start.env]
 PHX_SERVER = "true"                   # default for `start`; the real environment wins
@@ -93,8 +95,9 @@ Other tasks:
   aborts the VM.
 - Clustering: `./my_app --node my_app@10.0.0.5 start` with `RELEASE_COOKIE` set. No epmd is
   started; every node listens on port 9100 by default.
-- Another platform: put that platform's lean runtime `ampoule-<target>` (from the releases page)
-  next to `ampoule`, then `ampoule release --target x86_64-linux`.
+- Another platform: `ampoule release --target x86_64-linux`. It needs `ampoule-<target>` next to
+  `ampoule`; the install script adds every platform's. After a manual install, download it:
+  `curl -fLo ~/ampoule/ampoule-x86_64-linux https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-x86_64-linux`.
 - A container: `FROM scratch`, copy the Linux binary in, `ENTRYPOINT ["/my_app"]`,
   `CMD ["start"]`. Add CA certificates if the app makes TLS connections.
 
@@ -103,6 +106,8 @@ Other tasks:
 - The app sees only `/app` (the release, read-only), a private `/tmp`, `/etc/hosts`,
   `/etc/resolv.conf`, the CA bundle, `/dev/null`, a generated `/proc`, mounts, and allowed
   programs. Anything else on the host does not exist for it.
+- Outgoing connections (a database, an API) are allowed unless `--deny-connect` or
+  `--rewrite-connect` say otherwise; `[network] listen` limits only the ports the app binds.
 - No host program runs unless it is in `[process] allow` (or `--allow-exec`). `:os.cmd/1` and
   `{:spawn, cmd}` ports need `/bin/sh` allowed. Programs in the release's own `priv/` run without
   an entry.

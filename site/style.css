@@ -280,48 +280,6 @@ p, ul, ol { margin: 0; }
   margin-top: 0.6rem;
 }
 
-.targets {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.targets legend {
-  float: left;
-  width: 100%;
-  margin-bottom: 0.1rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-
-.targets label { position: relative; }
-
-.targets input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-
-.targets span {
-  display: inline-block;
-  padding: 0.3rem 0.75rem;
-  border: var(--hair) solid var(--ink);
-  border-radius: 999px;
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s var(--ease);
-}
-
-.targets label:hover span { background: var(--wash); }
-.targets input:checked + span { background: var(--wasm); border-color: var(--wasm); color: var(--paper); }
-
-.targets input:focus-visible + span {
-  outline: 3px solid var(--ink);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 7px var(--wasm);
-}
 
 /* A command plate: an ink rule, a paper ground, the copy control docked on its edge. */
 .plate {
@@ -352,6 +310,7 @@ p, ul, ol { margin: 0; }
 .cmd .p { color: var(--elixir); font-weight: 700; user-select: none; }
 .cmd .o { color: var(--ink-soft); }
 .cmd .token { white-space: nowrap; font-weight: 700; }
+.cmd .keep { white-space: nowrap; }
 
 .copy {
   flex: none;
@@ -374,6 +333,10 @@ p, ul, ol { margin: 0; }
 .copy:focus-visible { outline-offset: -5px; outline-color: var(--paper); box-shadow: none; }
 
 .note, .needs { font-size: 0.9rem; color: var(--ink-soft); }
+
+/* A command and the sentence that says where to run it, kept together. */
+.stage { display: grid; gap: 0.4rem; min-width: 0; }
+.stage-say { font-weight: 600; }
 
 .done { display: flex; align-items: center; gap: 0.6rem; font-size: 1.15rem; font-weight: 700; }
 .done svg { width: 2.25rem; height: 2.25rem; flex: none; }
