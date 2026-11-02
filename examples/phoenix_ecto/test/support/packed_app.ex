@@ -30,8 +30,14 @@ defmodule PackedApp do
   and waits until it accepts connections.
 
   Options: `:env` (a list of `{name, value}`), `:guest_port` (default 4000), `:timeout` (ms).
+
+  The free port is found by binding and closing it, so on a busy machine another socket can take it
+  before the app binds it. When the app reports its port in use, it is stopped and started again
+  on another port, up to three times.
   """
-  def start!(bin, args, opts \\ []) do
+  def start!(bin, args, opts \\ []), do: start!(bin, args, opts, 3)
+
+  defp start!(bin, args, opts, tries) do
     port = free_port()
     log = Path.join(System.tmp_dir!(), "packed-app-#{System.unique_integer([:positive])}.log")
     env = for {k, v} <- Keyword.get(opts, :env, []), do: {String.to_charlist(k), String.to_charlist(v)}
@@ -52,8 +58,24 @@ defmodule PackedApp do
 
     os_pid = receive do: ({:started, ^holder, pid} -> pid)
     app = %{holder: holder, os_pid: os_pid, port: port, log: log}
-    wait_until_listening!(app, System.monotonic_time(:millisecond) + Keyword.get(opts, :timeout, 60_000))
-    app
+
+    case wait_until_listening!(app, System.monotonic_time(:millisecond) + Keyword.get(opts, :timeout, 60_000)) do
+      :listening ->
+        app
+
+      :port_taken when tries > 1 ->
+        kill(app)
+        start!(bin, args, opts, tries - 1)
+
+      :port_taken ->
+        kill(app)
+        raise "host port #{port} was in use on every try:\n#{log(app)}"
+    end
+  end
+
+  defp kill(app) do
+    System.cmd("kill", ["-KILL", app.os_pid])
+    exit_status(app, 5_000)
   end
 
   def url(app, path), do: "http://127.0.0.1:#{app.port}#{path}"
@@ -100,6 +122,9 @@ defmodule PackedApp do
 
   defp wait_until_listening!(app, deadline) do
     cond do
+      port_taken?(log_so_far(app)) ->
+        :port_taken
+
       (status = exit_status(app, 0)) != nil ->
         raise "exited with #{status} before listening:\n#{log(app)}"
 
@@ -110,11 +135,23 @@ defmodule PackedApp do
         case :gen_tcp.connect(~c"127.0.0.1", app.port, [], 500) do
           {:ok, s} ->
             :gen_tcp.close(s)
+            :listening
 
           {:error, _} ->
             Process.sleep(250)
             wait_until_listening!(app, deadline)
         end
+    end
+  end
+
+  # Bandit says "already in use"; other servers report the bind error itself.
+  defp port_taken?(log), do: log =~ "already in use" or log =~ "eaddrinuse"
+
+  # The log file appears once the shell has started the binary.
+  defp log_so_far(app) do
+    case File.read(app.log) do
+      {:ok, text} -> text
+      {:error, _} -> ""
     end
   end
 
