@@ -433,6 +433,10 @@ struct RunOpts {
     stop_timeout: Option<u64>,
     memory_max: Option<u64>,
     mounts: Vec<(PathBuf, String, bool)>,
+    /// `--mount` or `AMPOULE_MOUNTS` was given: it replaces the packed `[[mounts]]`.
+    mounts_given: bool,
+    /// The app's home (HOME and init's `-home`); unset: its /tmp.
+    home: Option<String>,
     env: Vec<(String, String)>,
     tmp: Option<PathBuf>,
     hosts: Vec<(String, String)>,
@@ -473,7 +477,7 @@ fn app_usage(m: &Manifest) -> ! {
          \n  --host NAME=IP,...     AMPOULE_HOSTS        extra /etc/hosts entries\
          \n  --rewrite-connect A=B  AMPOULE_REWRITE      send connections for A (ip:port) to B\
          \n  --deny-connect ADDR    AMPOULE_DENY         refuse connections to ADDR (ip:port)\
-         \n  --mount H:G[:ro],...   AMPOULE_MOUNTS       expose host paths to the app\
+         \n  --mount H:G[:ro],...   AMPOULE_MOUNTS       expose host paths to the app (replaces [[mounts]] in ampoule.toml)\
          \n  --allow-exec PROGS     AMPOULE_ALLOW_EXEC   host programs the app may start, e.g. git,/bin/sh (\"*\": all on PATH)\
          \n  --memory-max SIZE      AMPOULE_MEMORY_MAX   cap the VM's memory, e.g. 512M, 2G\
          \n  --schedulers N         AMPOULE_SCHEDULERS   schedulers (default: host cores)\
@@ -551,6 +555,7 @@ fn apply_opt(o: &mut RunOpts, key: &str, v: &str) -> Result<()> {
             }
         },
         "mount" => {
+            o.mounts_given = true;
             for m in list(v) {
                 let mut parts = m.splitn(3, ':');
                 let host = parts.next().context("mounts are HOST:GUEST[:ro]")?;
@@ -704,6 +709,7 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
             None => bail!("unknown command {custom} (see `help`)"),
         },
     };
+    apply_packed_paths(m, &mut o, &std::env::var("HOME").unwrap_or_default())?;
     if cmd == "start" {
         let idle = match &o.idle_stop {
             Some(v) => idle::parse_duration(v)?,
@@ -722,6 +728,39 @@ fn app_main(app: App, args: &[String]) -> Result<()> {
         }
     }
     std::process::exit(run_vm(&app, &o, erl_args, defaults)?)
+}
+
+/// The packed `[[mounts]]`, expanded here, unless `--mount` or `AMPOULE_MOUNTS` replaced them; and
+/// the app's home from the packed `home`.
+fn apply_packed_paths(m: &Manifest, o: &mut RunOpts, host_home: &str) -> Result<()> {
+    if !o.mounts_given {
+        for mount in &m.mounts {
+            o.mounts.push(packed_mount(mount, host_home, |k| std::env::var(k).ok()).context("[[mounts]] in ampoule.toml")?);
+        }
+    }
+    if m.home.as_deref().map(config::parse_home).transpose()?.unwrap_or(false) {
+        if host_home.is_empty() {
+            bail!("home = \"host\" needs HOME");
+        }
+        o.home = Some(host_home.to_string());
+    }
+    Ok(())
+}
+
+/// One packed mount as (host, guest, read-only), its paths expanded; with `create`, a missing host
+/// directory is created with mode 0700 first.
+fn packed_mount(mount: &config::Mount, host_home: &str, var: impl Fn(&str) -> Option<String> + Copy) -> Result<(PathBuf, String, bool)> {
+    let host = config::expand(&mount.host, host_home, var)?;
+    let guest = match &mount.guest {
+        Some(g) => config::expand(g, host_home, var)?,
+        None => host.clone(),
+    };
+    if mount.create && !Path::new(&host).exists() {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&host).with_context(|| format!("creating {host}"))?;
+    }
+    let path = PathBuf::from(&host).canonicalize().with_context(|| format!("mount {host}"))?;
+    Ok((path, kernel::normalize(&guest), mount.ro))
 }
 
 /// `start`'s erl arguments: the release booted in `--mode` (embedded by default, as `mix release`),
@@ -855,6 +894,15 @@ fn info(app: &App) -> Result<()> {
     println!("network:   listen {listen}");
     if !m.process.allow.is_empty() {
         println!("processes: {}", m.process.allow.join(", "));
+    }
+    for mount in &m.mounts {
+        let guest = mount.guest.as_ref().map(|g| format!(" at {g}")).unwrap_or_default();
+        let flags = [(mount.ro, " (read-only)"), (mount.create, " (created when missing)")];
+        let flags: String = flags.iter().filter(|(on, _)| *on).map(|(_, f)| *f).collect();
+        println!("mount:     {}{guest}{flags}", mount.host);
+    }
+    if m.home.as_deref().map(config::parse_home).transpose()?.unwrap_or(false) {
+        println!("home:      the host's HOME");
     }
     if let Some(d) = dist::Opts::from_config(&m.distribution)?.resolve(&m.name) {
         let port = match (d.epmd, d.listen_port()) {
@@ -1180,7 +1228,8 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
         argv.extend(["-S".into(), format!("{n}:{n}"), "-SDcpu".into(), format!("{n}:{n}")]);
     }
     let bindir = format!("{APP}/erts-{}/bin", m.erts_vsn);
-    argv.extend(["--", "-root", APP, "-bindir", &bindir, "-progname", "erl", "--", "-home", "/tmp", "--"].map(String::from));
+    let home = o.home.as_deref().unwrap_or("/tmp");
+    argv.extend(["--", "-root", APP, "-bindir", &bindir, "-progname", "erl", "--", "-home", home, "--"].map(String::from));
     argv.extend(vm.erl);
     if !vm.extra.is_empty() {
         if !argv.iter().any(|a| a == "-extra") {
@@ -1205,7 +1254,7 @@ fn run_vm(app: &App, o: &RunOpts, erl_args: Vec<String>, defaults: BTreeMap<Stri
         ("BINDIR", bindir.clone()),
         ("EMU", "beam".into()),
         ("PROGNAME", "erl".into()),
-        ("HOME", "/tmp".into()),
+        ("HOME", home.into()),
         ("RELEASE_ROOT", APP.into()),
         ("RELEASE_NAME", m.name.clone()),
         ("RELEASE_VSN", m.vsn.clone()),
@@ -1296,6 +1345,65 @@ mod tests {
         let mut o = RunOpts::default();
         apply_opt(&mut o, "mount", "/:/host/../data:ro").unwrap();
         assert_eq!(o.mounts, vec![(PathBuf::from("/"), "/data".to_string(), true)]);
+    }
+
+    #[test]
+    fn a_mount_flag_or_variable_replaces_the_packed_mounts() {
+        let mut o = RunOpts::default();
+        apply_opt(&mut o, "mount", "").unwrap();
+        assert!(o.mounts_given && o.mounts.is_empty());
+    }
+
+    #[test]
+    fn packed_mounts_expand_where_the_binary_runs() {
+        let dir = TestDir::new("packed-mount");
+        let home = dir.0.to_string_lossy().into_owned();
+        std::fs::create_dir(dir.0.join("work")).unwrap();
+        let var = |k: &str| (k == "WORK").then(|| format!("{}/work", dir.0.display()));
+        let same = config::Mount { host: "$WORK".into(), guest: None, ro: false, create: false };
+        let (host, guest, ro) = packed_mount(&same, &home, var).unwrap();
+        assert_eq!(host, dir.0.join("work").canonicalize().unwrap());
+        assert_eq!(guest, format!("{home}/work"));
+        assert!(!ro);
+        let other = config::Mount { host: "~/work".into(), guest: Some("/data/../w".into()), ro: true, create: false };
+        assert_eq!(packed_mount(&other, &home, var).unwrap().1, "/w");
+    }
+
+    #[test]
+    fn a_packed_mount_creates_its_directory_only_when_asked() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TestDir::new("packed-mount-create");
+        let home = dir.0.to_string_lossy().into_owned();
+        let none = |_: &str| None;
+        let missing = config::Mount { host: "~/.config/app".into(), guest: None, ro: false, create: false };
+        assert!(packed_mount(&missing, &home, none).is_err());
+        let create = config::Mount { create: true, ..missing };
+        packed_mount(&create, &home, none).unwrap();
+        let mode = std::fs::metadata(dir.0.join(".config/app")).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+        let unset = config::Mount { host: "$UNSET".into(), guest: None, ro: false, create: true };
+        assert!(packed_mount(&unset, &home, none).is_err());
+    }
+
+    #[test]
+    fn home_is_private_unless_packed_as_host() {
+        let dir = TestDir::new("packed-home");
+        let release = config::ReleaseInfo { name: "app".into(), vsn: "0.1.0".into(), erts_vsn: "16.0".into(), elixir: true };
+        let mut m = Manifest::new(&release, config::Config::default());
+        let mut o = RunOpts::default();
+        apply_packed_paths(&m, &mut o, "/home/me").unwrap();
+        assert_eq!(o.home, None);
+        m.home = Some("host".into());
+        apply_packed_paths(&m, &mut o, "/home/me").unwrap();
+        assert_eq!(o.home.as_deref(), Some("/home/me"));
+        assert!(apply_packed_paths(&m, &mut RunOpts::default(), "").is_err());
+        m.mounts = vec![config::Mount { host: dir.0.to_string_lossy().into_owned(), guest: None, ro: false, create: false }];
+        let mut given = RunOpts { mounts_given: true, ..RunOpts::default() };
+        apply_packed_paths(&m, &mut given, "/home/me").unwrap();
+        assert!(given.mounts.is_empty());
+        let mut packed = RunOpts::default();
+        apply_packed_paths(&m, &mut packed, "/home/me").unwrap();
+        assert_eq!(packed.mounts.len(), 1);
     }
 
     #[test]

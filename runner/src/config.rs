@@ -8,6 +8,7 @@
 //! restart = "on-failure"         # `start` starts the VM again when it fails (crash, out of memory)
 //! memory_alarm = 80              # set system_memory_high_watermark at this % of the VM's memory limit
 //! native_cache = "off"           # keep the compiled engine between starts: "auto" (default), "off", or a directory
+//! home = "host"                  # the app's home is the host's HOME, not its private /tmp
 //!
 //! [commands]                       # extra commands: `<binary> migrate` evaluates the expression
 //! migrate = "MyApp.Release.migrate()"
@@ -33,6 +34,15 @@
 //! port = 9100                      # the distribution port (default: 9100 without epmd)
 //! epmd = "none"                    # "none": every node on `port`; "host": the host's epmd
 //! cookie_file = "/run/secrets/erlang-cookie"
+//!
+//! [[mounts]]                       # host paths the app sees; --mount and AMPOULE_MOUNTS replace them
+//! host = "$PWD"                    # `~`, `$VAR` and `${VAR}` expand where the binary runs
+//!
+//! [[mounts]]
+//! host = "~/.config/my_app"
+//! guest = "/config"                # default: the expanded host path
+//! ro = false
+//! create = true                    # create the host directory (0700) when it is missing
 //! ```
 
 use std::collections::BTreeMap;
@@ -106,6 +116,90 @@ impl Process {
     }
 }
 
+/// `[[mounts]]`: a host path the app sees. Both paths expand (`expand`) where the binary runs, not
+/// where it is packed, so a mount of `~/.config/my_app` or `$PWD` follows the user.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Mount {
+    pub host: String,
+    /// The guest path; unset: the expanded host path, so the app sees the host's path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest: Option<String>,
+    #[serde(default)]
+    pub ro: bool,
+    /// Create the host directory, and its missing parents, with mode 0700 when it is missing.
+    #[serde(default)]
+    pub create: bool,
+}
+
+impl Mount {
+    /// Checks both paths expand, with every variable set.
+    pub fn check(&self) -> Result<()> {
+        let any = |_: &str| Some("x".to_string());
+        if self.host.trim().is_empty() {
+            bail!("a mount needs a host path");
+        }
+        expand(&self.host, "/home", any)?;
+        if let Some(g) = &self.guest {
+            expand(g, "/home", any)?;
+        }
+        Ok(())
+    }
+}
+
+/// Expands a leading `~` (alone or before `/`) to `home`, and `$VAR` and `${VAR}` to `var(VAR)`.
+/// An unset variable is an error, not an empty string: `$UNSET/data` must not become `/data`.
+/// A `$` that starts no variable name stays as it is.
+pub fn expand(s: &str, home: &str, var: impl Fn(&str) -> Option<String>) -> Result<String> {
+    let rest = match s.strip_prefix('~') {
+        Some(r) if r.is_empty() || r.starts_with('/') => {
+            if home.is_empty() {
+                bail!("`{s}`: ~ needs HOME");
+            }
+            return Ok(format!("{home}{}", expand(r, home, var)?));
+        },
+        _ => s,
+    };
+    let name_char = |c: char| c == '_' || c.is_ascii_alphanumeric();
+    let mut out = String::with_capacity(rest.len());
+    let mut chars = rest.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c != '$' {
+            out.push(c);
+            continue;
+        }
+        let tail = &rest[i + 1..];
+        let (name, used) = if let Some(braced) = tail.strip_prefix('{') {
+            let end = braced.find('}').with_context(|| format!("`{s}`: unclosed ${{"))?;
+            (&braced[..end], end + 2)
+        } else {
+            let end = tail.find(|c: char| !name_char(c)).unwrap_or(tail.len());
+            (&tail[..end], end)
+        };
+        if name.is_empty() || !name.chars().all(name_char) || name.starts_with(|c: char| c.is_ascii_digit()) {
+            if tail.starts_with('{') {
+                bail!("`{s}`: bad variable name {name:?}");
+            }
+            out.push('$');
+            continue;
+        }
+        out.push_str(&var(name).with_context(|| format!("`{s}`: {name} is not set"))?);
+        for _ in 0..used {
+            chars.next();
+        }
+    }
+    Ok(out)
+}
+
+/// `home`: true for "host" (the app's home is the host's HOME), false for "private" (its /tmp).
+pub fn parse_home(s: &str) -> Result<bool> {
+    match s.trim() {
+        "host" => Ok(true),
+        "private" | "" => Ok(false),
+        other => bail!("bad home {other:?} (host or private)"),
+    }
+}
+
 /// `[distribution]`: see `dist`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -164,6 +258,11 @@ pub struct Config {
     /// Where the compiled engine is kept between starts: "auto", "off" or a directory (`native_cache`).
     #[serde(default)]
     pub native_cache: Option<String>,
+    /// "host": the app's home is the host's HOME; "private" (the default): its /tmp.
+    #[serde(default)]
+    pub home: Option<String>,
+    #[serde(default)]
+    pub mounts: Vec<Mount>,
 }
 
 impl Config {
@@ -185,6 +284,12 @@ impl Config {
         }
         if let Some(c) = &cfg.native_cache {
             crate::native_cache::Setting::parse(c).with_context(|| format!("{}: native_cache", path.display()))?;
+        }
+        if let Some(h) = &cfg.home {
+            parse_home(h).with_context(|| format!("{}: home", path.display()))?;
+        }
+        for m in &cfg.mounts {
+            m.check().with_context(|| format!("{}: [[mounts]]", path.display()))?;
         }
         if cfg.memory_alarm.is_some_and(|p| p > 100) {
             bail!("{}: memory_alarm is a percentage (0-100)", path.display());
@@ -303,6 +408,12 @@ pub struct Manifest {
     /// `native_cache` from ampoule.toml.
     #[serde(default)]
     pub native_cache: Option<String>,
+    /// `home` from ampoule.toml.
+    #[serde(default)]
+    pub home: Option<String>,
+    /// `[[mounts]]` from ampoule.toml, not yet expanded.
+    #[serde(default)]
+    pub mounts: Vec<Mount>,
 }
 
 impl Manifest {
@@ -329,6 +440,8 @@ impl Manifest {
             restart: cfg.restart,
             memory_alarm: cfg.memory_alarm,
             native_cache: cfg.native_cache,
+            home: cfg.home,
+            mounts: cfg.mounts,
         }
     }
 }
@@ -459,5 +572,83 @@ mod tests {
     #[test]
     fn config_rejects_unknown_keys() {
         assert!(load("[network]\nlisten = [4000]\nports = [1]\n").is_err());
+    }
+
+    fn vars(name: &str) -> Option<String> {
+        match name {
+            "PWD" => Some("/work/repo".into()),
+            "XDG_CONFIG_HOME" => Some("/home/me/.config".into()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn expand_replaces_a_leading_tilde_with_home() {
+        assert_eq!(expand("~", "/home/me", vars).unwrap(), "/home/me");
+        assert_eq!(expand("~/.config/app", "/home/me", vars).unwrap(), "/home/me/.config/app");
+        assert_eq!(expand("~other/x", "/home/me", vars).unwrap(), "~other/x");
+        assert_eq!(expand("/data/~", "/home/me", vars).unwrap(), "/data/~");
+        assert!(expand("~/x", "", vars).is_err());
+    }
+
+    #[test]
+    fn expand_replaces_variables_with_and_without_braces() {
+        assert_eq!(expand("$PWD", "/h", vars).unwrap(), "/work/repo");
+        assert_eq!(expand("${XDG_CONFIG_HOME}/app", "/h", vars).unwrap(), "/home/me/.config/app");
+        assert_eq!(expand("$PWD/sub:$PWD", "/h", vars).unwrap(), "/work/repo/sub:/work/repo");
+    }
+
+    #[test]
+    fn expand_refuses_an_unset_variable() {
+        let e = expand("$UNSET/data", "/h", vars).unwrap_err().to_string();
+        assert!(e.contains("UNSET is not set"), "{e}");
+        assert!(expand("${UNSET}", "/h", vars).is_err());
+    }
+
+    #[test]
+    fn expand_keeps_a_dollar_that_starts_no_variable() {
+        assert_eq!(expand("/a$/b$", "/h", vars).unwrap(), "/a$/b$");
+        assert_eq!(expand("/price$5", "/h", vars).unwrap(), "/price$5");
+        assert!(expand("${PWD", "/h", vars).is_err());
+        assert!(expand("${1X}", "/h", vars).is_err());
+    }
+
+    #[test]
+    fn config_reads_mounts() {
+        let cfg = load("[[mounts]]\nhost = \"$PWD\"\n\n[[mounts]]\nhost = \"~/.config/app\"\nguest = \"/config\"\nro = true\ncreate = true\n").unwrap();
+        assert_eq!(
+            cfg.mounts,
+            vec![
+                Mount { host: "$PWD".into(), guest: None, ro: false, create: false },
+                Mount { host: "~/.config/app".into(), guest: Some("/config".into()), ro: true, create: true },
+            ]
+        );
+    }
+
+    #[test]
+    fn config_rejects_bad_mounts() {
+        assert!(load("[[mounts]]\nhost = \"\"\n").is_err());
+        assert!(load("[[mounts]]\nhost = \"${PWD\"\n").is_err());
+        assert!(load("[[mounts]]\nguest = \"/x\"\n").is_err());
+        assert!(load("[[mounts]]\nhost = \"/x\"\nmode = \"rw\"\n").is_err());
+    }
+
+    #[test]
+    fn home_takes_host_or_private() {
+        assert!(parse_home("host").unwrap());
+        assert!(!parse_home("private").unwrap());
+        assert!(load("home = \"host\"\n").is_ok());
+        assert!(load("home = \"shared\"\n").is_err());
+    }
+
+    #[test]
+    fn the_manifest_keeps_home_and_the_mounts_unexpanded() {
+        let cfg = load("home = \"host\"\n\n[[mounts]]\nhost = \"~/.config/app\"\ncreate = true\n").unwrap();
+        let release = ReleaseInfo { name: "app".into(), vsn: "0.1.0".into(), erts_vsn: "16.0".into(), elixir: true };
+        let json = serde_json::to_string(&Manifest::new(&release, cfg)).unwrap();
+        let m: Manifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(m.home.as_deref(), Some("host"));
+        assert_eq!(m.mounts[0].host, "~/.config/app");
+        assert!(m.mounts[0].create);
     }
 }
