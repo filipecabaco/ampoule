@@ -5,6 +5,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `docs/limitations.md` states the speed cost: compiled code runs 1.5 to 20x slower than under
+  OTP's JIT, because the engine is an interpreter, with the measurements and how much of it is the
+  JIT against any interpreter. A clean stop takes about a second natively too, so the limitation
+  no longer says it takes a second longer.
+
 ## [0.1.13] - 2026-11-02
 
 ### Added

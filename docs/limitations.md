@@ -1,5 +1,29 @@
 # Limitations
 
+- Speed: the VM runs as an interpreter. WebAssembly cannot hold the JIT that a native OTP uses
+  (`:erlang.system_info(:emu_flavor)` is `:emu`, where a native release says `:jit`), so CPU-bound
+  code is slower than in a native release. Measured on Apple silicon (M5 Pro, OTP 28.5, ampoule
+  0.1.13), as compiled code in a plain `mix release` of the same app and in the packed binary:
+
+  | Work | Native release | ampoule | |
+  |---|---|---|---|
+  | tight integer loop, 100M iterations | 125 ms | 2.56 s | 20x |
+  | `Enum.reduce` over a 5M range | 9 ms | 119 ms | 13x |
+  | `fib(32)` | 8 ms | 48 ms | 5.8x |
+  | 50k SHA-256 hashes of 4 KB | 68 ms | 414 ms | 6.1x |
+  | 20k JSON round trips | 14 ms | 52 ms | 3.8x |
+  | sort 1M integers | 303 ms | 1.08 s | 3.6x |
+  | 500k ETS inserts and lookups | 160 ms | 242 ms | 1.5x |
+
+  Part of that is the JIT against any interpreter: a native OTP built with `--disable-jit` is 3.2
+  to 3.6x slower than the JIT on `fib(32)` and the integer loop. The rest is the interpreter
+  running as WebAssembly, which costs 1.4 to 1.6x on code that spends its time in allocation,
+  GC and `fib`-style calls, and 6.4x on the tight arithmetic loop. Code that mostly waits on I/O
+  loses much less. `examples/francis` (Bandit, a small HTML route) served 62,500 requests per
+  second over 50 keep-alive connections against 82,000 natively, and 9,200 against 17,300 over
+  one. Starting to the first response took 255 ms against 373 ms, and the process used about
+  100 MiB of memory against about 200 MiB (the native figure includes one scheduler thread per
+  core). These are one machine and a few workloads: measure yours.
 - Host programs run only when [allowed](reference/sandbox.md#host-programs). Programs in the
   release's own `priv/` run as they were built: one compiled on the machine that packed runs only
   on hosts of the same OS and CPU, and packing warns about the others.
@@ -26,5 +50,7 @@
   uncompressed file.
 - Debug information: `.beam` files lose their `Dbgi`, `Docs`, `ExCk`, `ExDp` and `Abst` chunks, so
   `Code.fetch_docs/1` and the debugger's source views have nothing to show.
-- Shutdown: a clean stop (SIGTERM, `System.stop/0`) takes about a second longer than it does
-  natively, because kernel's `user_sup` waits 1000 ms before it stops the user process.
+- Shutdown: a clean stop (SIGTERM, `System.stop/0`) takes about a second, as it does natively
+  (1.04 s against 1.05 s for a Bandit app on Apple silicon), because kernel's `user_sup` waits
+  1000 ms before it stops the user process. `eval`, `[commands]` entries and `main` end with
+  `halt()` and do not wait.
