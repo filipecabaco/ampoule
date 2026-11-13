@@ -33,36 +33,67 @@ fn first_existing(candidates: Vec<Option<PathBuf>>) -> Option<PathBuf> {
     candidates.into_iter().flatten().find(|p| p.is_dir())
 }
 
+struct Found {
+    sdk: Option<PathBuf>,
+    kit: Option<PathBuf>,
+    sdk_searched: Vec<PathBuf>,
+    kit_searched: Vec<PathBuf>,
+}
+
+/// The message for a toolchain piece nowhere to be found: where ampoule looked, and what to do.
+fn missing_help(what: &str, var: &str, searched: &[PathBuf], fetch: bool) -> String {
+    let mut m = format!("{what} not found (needed to build NIFs). Looked in:\n");
+    for p in searched {
+        m.push_str(&format!("  {}\n", p.display()));
+    }
+    m.push_str("To fix it, either:\n");
+    if fetch {
+        m.push_str("  - run `ampoule setup` to download the wasi-sdk and the engine kit into the cache\n");
+    } else {
+        m.push_str("  - unset AMPOULE_NO_FETCH and run `ampoule setup` to download the wasi-sdk and the engine kit into the cache\n");
+    }
+    m.push_str(&format!("  - set {var} to an existing one"));
+    if var == "AMPOULE_WASI_SDK" {
+        m.push_str(&format!(" (wasi-sdk {} exactly: https://github.com/WebAssembly/wasi-sdk/releases)", crate::setup::WASI_SDK));
+    } else {
+        m.push_str(" (a kit/ directory from an ampoule release, or build/engine/kit from scripts/engine.exs)");
+    }
+    m
+}
+
 impl Toolchain {
     /// AMPOULE_WASI_SDK / AMPOULE_KIT, else next to this executable (`kit/`, `../wasi-sdk`),
     /// else the cache (`ampoule setup`). Whatever is still missing is downloaded into the cache,
     /// unless `AMPOULE_NO_FETCH` is set.
     pub fn locate() -> Result<Toolchain> {
-        let (mut sdk, mut kit) = Self::find()?;
-        if (sdk.is_none() || kit.is_none()) && crate::fetch::enabled() {
-            crate::setup::install(sdk.is_none(), kit.is_none(), false)?;
-            (sdk, kit) = Self::find()?;
+        let mut found = Self::find()?;
+        if (found.sdk.is_none() || found.kit.is_none()) && crate::fetch::enabled() {
+            crate::setup::install(found.sdk.is_none(), found.kit.is_none(), false)?;
+            found = Self::find()?;
         }
-        let wasi_sdk = sdk.context("wasi-sdk not found: run `ampoule setup` to download it, or set AMPOULE_WASI_SDK to an existing wasi-sdk 34")?;
-        let kit = kit.context("engine kit not found: run `ampoule setup` to download it, put the kit/ directory from an ampoule release next to the binary, or set AMPOULE_KIT (scripts/engine.exs builds it into build/engine/kit)")?;
+        let fetch = crate::fetch::enabled();
+        let wasi_sdk = found.sdk.with_context(|| missing_help("wasi-sdk", "AMPOULE_WASI_SDK", &found.sdk_searched, fetch))?;
+        let kit = found.kit.with_context(|| missing_help("engine kit", "AMPOULE_KIT", &found.kit_searched, fetch))?;
         Ok(Toolchain { wasi_sdk: wasi_sdk.canonicalize()?, kit: kit.canonicalize()? })
     }
 
-    fn find() -> Result<(Option<PathBuf>, Option<PathBuf>)> {
+    fn find() -> Result<Found> {
         let exe_dir = std::env::current_exe()?.parent().map(Path::to_path_buf).unwrap_or_default();
         let cache = cache_dir();
-        let sdk = first_existing(vec![
+        let sdk_candidates = vec![
             std::env::var_os("AMPOULE_WASI_SDK").map(PathBuf::from),
             Some(exe_dir.join("wasi-sdk")),
             Some(exe_dir.join("../wasi-sdk")),
             cache.as_ref().map(|c| c.join(crate::setup::sdk_name())),
-        ]);
-        let kit = first_existing(vec![
-            std::env::var_os("AMPOULE_KIT").map(PathBuf::from),
-            Some(exe_dir.join("kit")),
-            cache.as_ref().map(|c| c.join(crate::setup::kit_name())),
-        ]);
-        Ok((sdk, kit))
+        ];
+        let kit_candidates =
+            vec![std::env::var_os("AMPOULE_KIT").map(PathBuf::from), Some(exe_dir.join("kit")), cache.as_ref().map(|c| c.join(crate::setup::kit_name()))];
+        Ok(Found {
+            sdk_searched: sdk_candidates.iter().flatten().cloned().collect(),
+            kit_searched: kit_candidates.iter().flatten().cloned().collect(),
+            sdk: first_existing(sdk_candidates),
+            kit: first_existing(kit_candidates),
+        })
     }
 
     pub fn clang(&self, cxx: bool) -> PathBuf {
@@ -268,6 +299,19 @@ pub fn cc_main(args: &[String], cxx: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_sdk_says_where_it_looked_and_how_to_fix() {
+        let m = missing_help("wasi-sdk", "AMPOULE_WASI_SDK", &[PathBuf::from("/a/wasi-sdk"), PathBuf::from("/c/wasi-sdk-34.0")], true);
+        assert!(m.contains("/a/wasi-sdk") && m.contains("/c/wasi-sdk-34.0"));
+        assert!(m.contains("ampoule setup") && m.contains("AMPOULE_WASI_SDK") && m.contains("34.0"));
+        assert!(!m.contains("unset AMPOULE_NO_FETCH"));
+    }
+
+    #[test]
+    fn missing_with_fetch_off_says_to_unset_it() {
+        assert!(missing_help("engine kit", "AMPOULE_KIT", &[], false).contains("unset AMPOULE_NO_FETCH"));
+    }
 
     #[test]
     fn host_only_drops_linker_and_cpu_flags() {

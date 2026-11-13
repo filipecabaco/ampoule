@@ -10,7 +10,7 @@ Install with `curl -fsSL https://filipecabaco.github.io/ampoule/install.sh | sh`
 - [Deploying](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/deploy.md): a server, an empty `FROM scratch` container, packing for other platforms
 - [A web app](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/web-app.md): Phoenix and Bandit apps; migrations, ports, memory, idle stop, shutdown
 - [A CLI](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/cli.md): `main`, `[[mounts]]`, `home = "host"`, `--vm`
-- [NIFs](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/nifs.md): C, C++ and Rust dependencies rebuilt for wasm; wasi-sdk and the kit
+- [NIFs](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/nifs.md): C, C++ and Rust dependencies rebuilt for wasm; wasi-sdk and the kit, downloaded by `ampoule setup` or on first pack
 - [Clustering](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/cluster.md): distribution without epmd, the cookie, `remote` and `rpc`
 - [iPhone and iPad](https://raw.githubusercontent.com/filipecabaco/ampoule/main/docs/guides/ios.md): `--target ios`
 
