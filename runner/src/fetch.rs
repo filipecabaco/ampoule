@@ -19,13 +19,14 @@ pub fn enabled() -> bool {
     std::env::var_os("AMPOULE_NO_FETCH").is_none_or(|v| v.is_empty() || v == "0")
 }
 
+/// Where `v<version>`'s files are downloaded from (`AMPOULE_RELEASES` points at a mirror).
+pub fn release_base(version: &str) -> String {
+    std::env::var("AMPOULE_RELEASES").map(|b| format!("{}/v{version}", b.trim_end_matches('/'))).unwrap_or_else(|_| format!("{RELEASES}/v{version}"))
+}
+
 /// Where this version's downloaded runtimes are kept.
 fn dir(version: &str) -> Option<PathBuf> {
-    let base = match std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).filter(|p| p.is_absolute()) {
-        Some(xdg) => xdg.join("ampoule"),
-        None => PathBuf::from(std::env::var_os("HOME")?).join(".cache/ampoule"),
-    };
-    Some(base.join("runtimes").join(version))
+    Some(crate::toolchain::cache_dir()?.join("runtimes").join(version))
 }
 
 /// `ampoule-<target>` for `version`: the cached copy, else downloaded and checked.
@@ -36,8 +37,7 @@ pub fn runtime(target: &str, version: &str) -> Result<PathBuf> {
     if path.is_file() {
         return Ok(path);
     }
-    let base =
-        std::env::var("AMPOULE_RELEASES").map(|b| format!("{}/v{version}", b.trim_end_matches('/'))).unwrap_or_else(|_| format!("{RELEASES}/v{version}"));
+    let base = release_base(version);
     eprintln!("==> downloading the {target} runtime of ampoule {version} into {}", dir.display());
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let partial = dir.join(format!(".{name}.partial"));
@@ -54,14 +54,14 @@ pub fn runtime(target: &str, version: &str) -> Result<PathBuf> {
 }
 
 /// The checksum `SHA256SUMS` lists for `name` (`<hex>  <name>`, or `<hex> *<name>`).
-fn expected(sums: &str, name: &str) -> Option<String> {
+pub fn expected(sums: &str, name: &str) -> Option<String> {
     sums.lines().find_map(|line| {
         let (hash, file) = line.split_once(char::is_whitespace)?;
         (file.trim_start().trim_start_matches('*') == name).then(|| hash.to_ascii_lowercase())
     })
 }
 
-fn curl(url: &str) -> Result<Vec<u8>> {
+pub fn curl(url: &str) -> Result<Vec<u8>> {
     let out = Command::new("curl").args(["-fsSL", "--retry", "3", url]).output().context("downloading the runtime needs curl on PATH")?;
     if !out.status.success() {
         bail!("could not download {url}: {}", String::from_utf8_lossy(&out.stderr).trim());
@@ -75,7 +75,7 @@ fn write_executable(path: &Path, bytes: &[u8]) -> Result<()> {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).with_context(|| format!("chmod {}", path.display()))
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 

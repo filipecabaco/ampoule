@@ -59,7 +59,8 @@ struct Kit {
 fn check_llvm(kit: Option<&str>, sdk: Option<&str>) -> Result<()> {
     match (kit, sdk) {
         (Some(want), Some(have)) if want != have => bail!(
-            "the engine kit was built with LLVM {want}, but this wasi-sdk has LLVM {have}: use the wasi-sdk the kit was built with (wasi-sdk 34 for this ampoule; AMPOULE_WASI_SDK)"
+            "the engine kit was built with LLVM {want}, but this wasi-sdk has LLVM {have}: use the wasi-sdk the kit was built with (wasi-sdk {} for this ampoule): `ampoule setup --force` installs it, or set AMPOULE_WASI_SDK",
+            crate::setup::WASI_SDK
         ),
         (Some(want), None) => bail!("the engine kit needs LLVM {want}, and this wasi-sdk does not say which LLVM it has (no VERSION file)"),
         _ => Ok(()),

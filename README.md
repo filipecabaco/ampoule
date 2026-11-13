@@ -25,7 +25,7 @@ The file is your release, unchanged, plus the VM to run it. It behaves like `bin
 answers its first request about 0.3 seconds after launch.
 
 Phoenix, Ecto, Bandit, Francis and plain OTP applications pack without changes. NIFs in C, C++ and
-Rust are rebuilt for wasm while packing. The app runs in a sandbox: it sees its own release, a
+Rust are rebuilt for wasm while packing; the wasi-sdk and kit that needs are downloaded once per machine (`ampoule setup` does it ahead of time). The app runs in a sandbox: it sees its own release, a
 private `/tmp` and only the host paths, ports and programs it is given.
 
 ## Install

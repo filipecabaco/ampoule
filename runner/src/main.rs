@@ -28,6 +28,7 @@ mod nif;
 mod pack;
 mod policy;
 mod proc;
+mod setup;
 mod shipped;
 mod signals;
 mod spawn;
@@ -122,6 +123,7 @@ fn cli_usage() -> ! {
          \n  ampoule release [pack options] [-- mix release args]   run `mix release` here, then pack it\
          \n  ampoule pack RELEASE_DIR [pack options]                 pack an existing release\
          \n  ampoule run RELEASE_DIR [--config FILE] [app options] COMMAND   run a release without packing\
+         \n  ampoule setup [--force]                                 download the wasi-sdk packing NIFs needs (~/.cache/ampoule)\
          \n  ampoule version\
          \n\npack options:\
          \n  --config FILE        ampoule.toml (default: ./ampoule.toml if present)\
@@ -199,6 +201,7 @@ fn parse_pack_args(args: &[String]) -> Result<PackArgs> {
 fn cli_main(stub: &'static [u8], args: &[String]) -> Result<()> {
     let Some(cmd) = args.first() else { cli_usage() };
     match cmd.as_str() {
+        "setup" => setup::setup_main(&args[1..]),
         "cc" => toolchain::cc_main(&args[1..], false),
         "c++" => toolchain::cc_main(&args[1..], true),
         "version" | "--version" => {

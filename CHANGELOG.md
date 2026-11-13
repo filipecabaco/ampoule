@@ -5,8 +5,20 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-11-13
+
+### Added
+
+- `ampoule setup` installs what NIFs need into the cache (`~/.cache/ampoule`, or under
+  `$XDG_CACHE_HOME`): the pinned, checksummed wasi-sdk 34 in `wasi-sdk-34.0/`, and the engine kit
+  taken from this version's release in `kit-<erts>/`. Packing does the same by itself when either
+  is missing, so a project in any directory needs no `AMPOULE_WASI_SDK` or `AMPOULE_KIT`;
+  `AMPOULE_NO_FETCH=1` turns that off. A development build has no release to take the kit from, and
+  still needs `AMPOULE_KIT`.
+
 ### Changed
 
+- The wasi-sdk and engine kit errors say to run `ampoule setup`.
 - `docs/limitations.md` states the speed cost: compiled code runs 1.5 to 20x slower than under
   OTP's JIT, because the engine is an interpreter, with the measurements and how much of it is the
   JIT against any interpreter. A clean stop takes about a second natively too, so the limitation
