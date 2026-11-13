@@ -59,6 +59,11 @@ downloads it from the same release. On its own it packs apps without NIFs:
 curl -fLo ampoule https://github.com/filipecabaco/ampoule/releases/latest/download/ampoule-aarch64-darwin && chmod +x ampoule
 ```
 
+Apps with NIFs also need wasi-sdk 34 and the NIF kit. Packing downloads them into
+`~/.cache/ampoule` the first time, for every project on the machine, so an app in another directory
+needs no `AMPOULE_WASI_SDK`. `ampoule setup` does the same ahead of time. See
+[NIFs](guides/nifs.md).
+
 ## Pack an app
 
 Run `ampoule release` in the project root. It runs `mix release` with `MIX_ENV=prod`, then packs

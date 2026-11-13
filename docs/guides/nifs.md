@@ -18,16 +18,23 @@ kit. It has to be 34 exactly: the kit is LLVM bitcode, for link-time optimisatio
 engine, and only the LLVM it was built with (23.1.0) can link it. `ampoule` says so if it finds
 another. Release archives include the kit as `kit/`.
 
-`ampoule` looks for them in `AMPOULE_WASI_SDK` and `AMPOULE_KIT`, then next to its own executable
-(`wasi-sdk/`, `../wasi-sdk`, `kit/`), then under `~/.cache/ampoule/`. Unpacking wasi-sdk next to
-`ampoule` is enough (the hosts are `arm64-macos`, `x86_64-macos`, `arm64-linux` and
-`x86_64-linux`):
+Nothing to do by hand: packing downloads whichever is missing into `~/.cache/ampoule` (or under
+`$XDG_CACHE_HOME`) the first time it needs them, and every project on the machine shares them. To
+fetch ahead of time, for CI or an offline machine, run:
 
 ```sh
-cd ~/ampoule
-curl -fL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-macos.tar.gz | tar -xz
-mv wasi-sdk-34.0-arm64-macos wasi-sdk
+ampoule setup
 ```
+
+The wasi-sdk is the pinned release from GitHub, checked against its SHA-256, in
+`wasi-sdk-34.0/`. The kit comes from this version's own release archive, checked against the
+release's `SHA256SUMS`. `AMPOULE_NO_FETCH=1` turns every download off, packing's included. A
+development build has no release to take the kit from: build it with `scripts/engine.exs` and set
+`AMPOULE_KIT` to `build/engine/kit`.
+
+`ampoule` looks for the wasi-sdk and kit in `AMPOULE_WASI_SDK` and `AMPOULE_KIT`, then next to its
+own executable (`wasi-sdk/`, `../wasi-sdk`, `kit/`), then in the cache. To manage the wasi-sdk
+yourself, unpack it anywhere and point `AMPOULE_WASI_SDK` at it.
 
 Rust NIFs also need the Rust target: `rustup target add wasm32-wasip1-threads`.
 
