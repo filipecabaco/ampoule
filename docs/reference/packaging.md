@@ -5,6 +5,7 @@
 | `ampoule release [pack options] [-- mix release args]` | runs `mix release --overwrite` in the current project, then packs it |
 | `ampoule pack RELEASE_DIR [pack options]` | packs an existing release directory |
 | `ampoule run RELEASE_DIR [--config FILE] [app options] COMMAND` | runs a release directory without packing it, for quick iteration |
+| `ampoule setup [--force]` | installs the wasi-sdk and NIF kit that packing NIFs needs into the cache; packing does it by itself when they are missing |
 | `ampoule version` | runtime version, target and ERTS version |
 
 ## Pack options
@@ -27,7 +28,7 @@ Each binary is written as `<out>/<release>-<target>`, for example
 Packing needs Elixir and Erlang/OTP 28 on the packing machine, since `ampoule release` runs `mix
 release`. The release must be built with the same OTP major as the runtime's ERTS (`ampoule
 version` shows it; currently OTP 28, ERTS 16), and `pack` refuses a mismatch. Apps with NIFs also
-need wasi-sdk and the NIF kit; see [NIFs](../guides/nifs.md).
+need wasi-sdk and the NIF kit, which `ampoule setup` (or packing itself) downloads; see [NIFs](../guides/nifs.md).
 
 ## The lean runtime
 
@@ -51,7 +52,7 @@ When `ampoule-x86_64-linux` is not next to `ampoule`, packing downloads it from 
 release (`v<version>`, never `latest`, so the versions always match), checks it against that
 release's `SHA256SUMS`, and keeps it in `~/.cache/ampoule/runtimes/<version>/` (under
 `$XDG_CACHE_HOME` when that is set) for the next pack. The download uses `curl`. A file that does
-not match its checksum is refused and not kept. `AMPOULE_NO_FETCH=1` turns the download off;
+not match its checksum is refused and not kept. `AMPOULE_NO_FETCH=1` turns this download off, and the wasi-sdk and kit downloads for NIFs too;
 `AMPOULE_RELEASES=URL` downloads from a mirror laid out as `URL/v<version>/ampoule-<target>` with
 its `SHA256SUMS`.
 

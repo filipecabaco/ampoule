@@ -18,7 +18,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- The wasi-sdk and engine kit errors say to run `ampoule setup`.
+- When the wasi-sdk or the engine kit cannot be found, the error lists every place `ampoule` looked
+  and the ways to fix it: `ampoule setup`, or `AMPOULE_WASI_SDK` / `AMPOULE_KIT`.
+- The packaging reference lists `ampoule setup`, and says `AMPOULE_NO_FETCH` covers the NIF
+  toolchain downloads too.
 - `docs/limitations.md` states the speed cost: compiled code runs 1.5 to 20x slower than under
   OTP's JIT, because the engine is an interpreter, with the measurements and how much of it is the
   JIT against any interpreter. A clean stop takes about a second natively too, so the limitation

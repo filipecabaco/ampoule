@@ -32,6 +32,8 @@ release's `SHA256SUMS`. `AMPOULE_NO_FETCH=1` turns every download off, packing's
 development build has no release to take the kit from: build it with `scripts/engine.exs` and set
 `AMPOULE_KIT` to `build/engine/kit`.
 
+When one is not found, the error lists every place `ampoule` looked and the fixes.
+
 `ampoule` looks for the wasi-sdk and kit in `AMPOULE_WASI_SDK` and `AMPOULE_KIT`, then next to its
 own executable (`wasi-sdk/`, `../wasi-sdk`, `kit/`), then in the cache. To manage the wasi-sdk
 yourself, unpack it anywhere and point `AMPOULE_WASI_SDK` at it.
