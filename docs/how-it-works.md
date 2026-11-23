@@ -13,6 +13,21 @@ Packing appends the app to a copy of the lean runtime:
 [ampoule][rootfs image][engine?][manifest JSON][rootfs len][engine len][manifest len]["AMPOULE1"]
 ```
 
+On arm64 macOS the same bytes after `[ampoule]` go in a Mach-O section, `__SUI,__ampoule`, placed
+before `__LINKEDIT`, and the binary is signed ad hoc over all of it. A signature has to be the last
+thing in a Mach-O, so an appended payload fails `codesign --strict` and can never carry a Developer
+ID or be notarized; in a section it can. To ship a packed app signed and notarized:
+
+```console
+codesign --force --options runtime --timestamp \
+  --entitlements entitlements.plist --sign "Developer ID Application: …" my_app-aarch64-darwin
+```
+
+with `com.apple.security.cs.allow-unsigned-executable-memory` in `entitlements.plist`: the
+hardened runtime otherwise refuses to make the precompiled engine executable, and the app is killed
+at start. Under the hardened runtime the engine cache (`native_cache`) is skipped, because no
+entitlement lets it run code mapped from an unsigned file; the engine loads in memory instead.
+
 - The rootfs image is the pruned release, one zstd frame per file, with an index read at startup.
   Every frame is compressed with a zstd dictionary trained on the release's own files and stored
   in the image, so the many small `.beam` files share what they have in common and each file is

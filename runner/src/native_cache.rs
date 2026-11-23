@@ -70,7 +70,8 @@ impl Setting {
 /// Where engines are kept: the setting's directory, or for `Auto`, `AMPOULE_NATIVE_CACHE`, systemd's
 /// `CACHE_DIRECTORY` (a service with `CacheDirectory=`), `$XDG_CACHE_HOME/ampoule/native` or
 /// `~/.cache/ampoule/native`. None for `Off`, with `AMPOULE_NO_CACHE` set (to anything but `0`), or
-/// when one of `writable`, the host paths the app can write, contains it.
+/// when one of `writable`, the host paths the app can write, contains it. None as well under
+/// macOS's hardened runtime (see `hardened_runtime`), saying so only when a directory was asked for.
 pub fn dir(setting: &Setting, writable: &[&Path]) -> Option<PathBuf> {
     let env = |name: &str| std::env::var_os(name);
     let dir = match setting {
@@ -79,11 +80,42 @@ pub fn dir(setting: &Setting, writable: &[&Path]) -> Option<PathBuf> {
         Setting::Dir(d) => d.clone(),
         Setting::Auto => dir_from(env)?,
     };
+    if hardened_runtime() {
+        if *setting != Setting::Auto || env("AMPOULE_NATIVE_CACHE").is_some_and(|v| !v.is_empty()) {
+            eprintln!(
+                "ampoule: not using the engine cache in {}: macOS's hardened runtime does not run code mapped from a file; loading the engine in memory",
+                dir.display()
+            );
+        }
+        return None;
+    }
     if let Some(w) = exposed(&dir, writable) {
         eprintln!("ampoule: not using the engine cache in {}: the app can write to it through {}; loading the engine in memory", dir.display(), w.display());
         return None;
     }
     Some(dir)
+}
+
+/// Whether this process runs under macOS's hardened runtime, as a Developer ID signed and notarized
+/// app does. It refuses to make a file's pages executable unless the file is signed, which an
+/// engine written here never is: no entitlement lifts that (`allow-unsigned-executable-memory`
+/// covers the anonymous memory `Module::deserialize` uses, and is what such an app needs), so
+/// trying only fails, leaves an `.unusable` file behind and says so at every start.
+pub fn hardened_runtime() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        extern "C" {
+            fn csops(pid: libc::pid_t, ops: u32, useraddr: *mut libc::c_void, usersize: usize) -> libc::c_int;
+        }
+        const CS_OPS_STATUS: u32 = 0;
+        const CS_RUNTIME: u32 = 0x0001_0000;
+        let mut flags: u32 = 0;
+        // SAFETY: CS_OPS_STATUS writes the 4-byte status of this process into `flags`.
+        let rc = unsafe { csops(libc::getpid(), CS_OPS_STATUS, (&mut flags as *mut u32).cast(), std::mem::size_of::<u32>()) };
+        rc == 0 && flags & CS_RUNTIME != 0
+    }
+    #[cfg(not(target_os = "macos"))]
+    false
 }
 
 fn dir_from(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {

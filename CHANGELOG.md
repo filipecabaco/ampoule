@@ -5,6 +5,24 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-11-23
+
+### Added
+
+- Packed arm64 macOS apps can be signed with a Developer ID and notarized. The payload goes in a
+  Mach-O section (`__SUI,__ampoule`, written with Deno's `libsui`) and the binary is signed ad hoc
+  over all of it, where the appended payload failed `codesign --strict` ("main executable failed
+  strict validation"). The runtime is linked with `-headerpad 0x1000` so the section's load
+  command fits, and packing refuses a runtime without that room rather than overwrite its code.
+  Linux and x86_64 macOS binaries are still appended. See `docs/how-it-works.md` for the
+  entitlement a signed app needs.
+
+### Changed
+
+- Under macOS's hardened runtime the engine cache is skipped: the kernel will not run code mapped
+  from an unsigned file, so it only failed and left an `.unusable` file at every start. An explicit
+  cache directory says why.
+
 ## [0.1.14] - 2026-11-13
 
 ### Added
