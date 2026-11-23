@@ -8,6 +8,12 @@
 //! [stub][rootfs image][engine?][manifest JSON][rootfs len][engine len][manifest len]["AMPOULE1"]
 //! ```
 //!
+//! On arm64 macOS the payload (everything after the stub above) goes in a section of its own
+//! instead, `__SUI,__ampoule`, placed before `__LINKEDIT` and covered by a fresh ad-hoc signature
+//! (`libsui`). Data appended after a Mach-O's signature fails `codesign`'s strict validation, so an
+//! appended payload can never be signed with a Developer ID or notarized; a section can, and
+//! `codesign --force --sign` replaces the ad-hoc signature like any other.
+//!
 //! The engine section is present when the release has NIFs: beam.wasm relinked with them and
 //! precompiled for the binary's target (see `nif`), in the built-in engine's form: the native
 //! code's SHA-256, then the code zstd-compressed (`engine_target::precompile`).
@@ -19,6 +25,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use crate::config::{Manifest, ReleaseInfo};
+use crate::macho;
 
 const MAGIC: &[u8; 8] = b"AMPOULE1";
 const TRAILER: usize = 32;
@@ -75,10 +82,29 @@ pub struct Payload {
     pub manifest: Manifest,
 }
 
-/// Split a binary into its stub and, if it carries one, its payload.
+/// Split a binary into its stub and, if it carries one, its payload. A payload in a Mach-O section
+/// leaves the whole binary as the stub: only a runtime without a payload is ever packed from.
 pub fn split(bytes: &'static [u8]) -> Result<(&'static [u8], Option<Payload>)> {
+    if let Some(section) = macho::section(bytes, macho::SEGMENT, SECTION) {
+        let (start, payload) = trailing(section)?.context("the payload section has no trailer")?;
+        if start != 0 {
+            bail!("corrupt payload section");
+        }
+        return Ok((bytes, Some(payload)));
+    }
+    Ok(match trailing(bytes)? {
+        Some((start, payload)) => (&bytes[..start], Some(payload)),
+        None => (bytes, None),
+    })
+}
+
+/// The section a Mach-O payload is written to, in libsui's segment (`macho::SEGMENT`).
+const SECTION: &str = "__ampoule";
+
+/// The payload `bytes` ends with, and where it starts, if it ends with the trailer.
+fn trailing(bytes: &'static [u8]) -> Result<Option<(usize, Payload)>> {
     if bytes.len() < TRAILER || &bytes[bytes.len() - 8..] != MAGIC {
-        return Ok((bytes, None));
+        return Ok(None);
     }
     let t = bytes.len() - TRAILER;
     let field = |i: usize| -> Result<usize> { Ok(u64::from_le_bytes(bytes[t + i * 8..t + i * 8 + 8].try_into()?) as usize) };
@@ -91,7 +117,7 @@ pub fn split(bytes: &'static [u8]) -> Result<(&'static [u8], Option<Payload>)> {
     if manifest.format != Manifest::FORMAT {
         bail!("payload format {} is not supported by this runtime (expects {})", manifest.format, Manifest::FORMAT);
     }
-    Ok((&bytes[..start], Some(Payload { rootfs, engine, manifest })))
+    Ok(Some((start, Payload { rootfs, engine, manifest })))
 }
 
 /// The running executable, mapped read-only for the life of the process. Only the pages read become
@@ -174,22 +200,23 @@ pub fn write_tree(release: &Path, dest: &Path) -> Result<Stats> {
     Ok(stats)
 }
 
-/// Write `stub` + payload to `out`, executable.
+/// Write `stub` + payload to `out`, executable: in a signed section for an arm64 Mach-O stub (see
+/// the module docs), appended otherwise.
 pub fn write_binary(stub: &[u8], rootfs: &[u8], engine: Option<&[u8]>, manifest: &Manifest, out: &Path) -> Result<()> {
     let manifest = serde_json::to_vec(manifest)?;
     let engine = engine.unwrap_or(&[]);
     if let Some(dir) = out.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let mut bytes = Vec::with_capacity(stub.len() + rootfs.len() + engine.len() + manifest.len() + TRAILER);
-    bytes.extend_from_slice(stub);
-    bytes.extend_from_slice(rootfs);
-    bytes.extend_from_slice(engine);
-    bytes.extend_from_slice(&manifest);
-    bytes.extend_from_slice(&(rootfs.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(&(engine.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(&(manifest.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(MAGIC);
+    let mut payload = Vec::with_capacity(rootfs.len() + engine.len() + manifest.len() + TRAILER);
+    payload.extend_from_slice(rootfs);
+    payload.extend_from_slice(engine);
+    payload.extend_from_slice(&manifest);
+    payload.extend_from_slice(&(rootfs.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&(engine.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&(manifest.len() as u64).to_le_bytes());
+    payload.extend_from_slice(MAGIC);
+    let bytes = if macho::is_arm64(stub) { macho::with_section(stub, SECTION, payload)? } else { [stub, &payload].concat() };
     let tmp = out.with_extension("partial");
     std::fs::write(&tmp, bytes)?;
     std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;

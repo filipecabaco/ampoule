@@ -21,6 +21,7 @@ mod idle;
 mod ifaddrs;
 mod ios;
 mod kernel;
+mod macho;
 mod mem;
 mod native_cache;
 mod net;
@@ -415,7 +416,9 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
             None => None,
         };
         pack::write_binary(stub, &image, engine.as_deref(), &manifest, &out)?;
-        if target.ends_with("-darwin") && cfg!(target_os = "macos") {
+        // An arm64 stub comes back signed with its payload in a section (pack::write_binary). An
+        // appended payload is outside what a signature covers, and this only refreshes the stub's.
+        if target.ends_with("-darwin") && !macho::is_arm64(stub) && cfg!(target_os = "macos") {
             let _ = std::process::Command::new("codesign").args(["--force", "--sign", "-"]).arg(&out).output();
         }
         let size = std::fs::metadata(&out)?.len();

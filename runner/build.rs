@@ -45,4 +45,10 @@ fn main() {
         panic!("unsupported target {target}: ampoule runs on macOS and Linux")
     };
     println!("cargo:rustc-env=AMPOULE_TARGET={arch}-{os}");
+    // Room after the load commands for the segment a packed payload goes in (pack.rs): ld64 leaves
+    // only what alignment happens to give, 48 bytes on 0.1.13's runtime against the 152 needed.
+    // Tests too, so macho.rs's round trip runs on the real thing.
+    if os == "darwin" {
+        println!("cargo:rustc-link-arg=-Wl,-headerpad,0x1000");
+    }
 }

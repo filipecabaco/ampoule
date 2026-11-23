@@ -12,3 +12,5 @@ ampoule binaries include, compiled to WebAssembly or linked in:
 - wasi-libc and the LLVM runtime libraries from wasi-sdk (https://github.com/WebAssembly/wasi-sdk),
   Apache License 2.0 with LLVM exception and compatible licenses.
 - zstd (https://facebook.github.io/zstd), BSD license.
+- libsui (https://github.com/denoland/sui), MIT license, Copyright 2024 Divy Srivastava and the
+  Deno authors.
