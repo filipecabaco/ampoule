@@ -37,8 +37,8 @@ defmodule Engine do
     "arm64-linux" => "f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971",
     "x86_64-linux" => "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4"
   }
-  @otp "28.5.0.4"
-  @otp_sha256 "efb045f96ee56d274f6c1fe3a9612b45caa01d2f82e35fe4e0ac9b0c501f6e53"
+  @otp "28.5.0.9"
+  @otp_sha256 "3ecc6abcaed81fa45f17aabe7677136aaf53247d533727fe51a778c369d2142c"
   @openssl "3.5.9"
   @openssl_sha256 "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"
 

@@ -2,8 +2,8 @@
 # Rust comes from runner/rust-toolchain.toml (rustup).
 
 [tools]
-erlang = "28.5.0.4"     # the engine's OTP major: the engine build and packed releases need it
-elixir = "1.19.5-otp-28"
+erlang = "28.5.0.9"     # the engine's OTP major: the engine build and packed releases need it
+elixir = "1.20.5-otp-28"
 
 [env]
 AMPOULE_WASI_SDK = "{{config_root}}/build/wasi-sdk"

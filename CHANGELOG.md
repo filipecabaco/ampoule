@@ -5,6 +5,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-11-25
+
+### Security
+
+- The engine is built from Erlang/OTP 28.5.0.9 (ERTS 16.4.0.8), up from 28.5.0.4. The patch
+  releases in between fix CVEs in `ssh` (packet alignment, `max_channels` not enforced for session
+  channels) and `public_key`/`ssl` (X.509 basic-constraints checks on v1/v2 certificates in a CA
+  position), among others; a packed release now runs on the fixed VM. Releases must be built with
+  OTP 28.5.0.9 to match. The source tarball's SHA-256 is the one OTP publishes in `SHA256.txt`.
+- The toolchain moves to Elixir 1.20.5, which fixes CVEs in `URI.parse` and JSON integer decoding.
+
 ## [0.1.15] - 2026-11-23
 
 ### Added
