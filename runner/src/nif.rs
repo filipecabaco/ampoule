@@ -335,13 +335,36 @@ struct CargoPackage {
 fn patch_rustler(src: &Path, dest: &Path) -> Result<()> {
     let _ = std::fs::remove_dir_all(dest);
     copy_tree(src, dest)?;
-    let filler = dest.join("src/sys/nif_filler.rs");
-    let text = std::fs::read_to_string(&filler)?;
-    let unix = "#[cfg(not(target_os = \"windows\"))]\nmod internal {";
-    if !text.contains(unix) {
-        bail!("unexpected rustler nif_filler.rs layout in {}", src.display());
+    let sys = dest.join("src/sys");
+    if std::fs::read_to_string(sys.join("nif_filler.rs"))?.contains(DLSYM_NIF_FILLER) {
+        edit(&sys.join("nif_filler.rs"), &[(DLSYM_NIF_FILLER, WASI_NIF_FILLER)])?;
+    } else {
+        edit(
+            &sys.join("functions.rs"),
+            &[
+                (r#"any(windows, all(unix, target_pointer_width = "32"))"#, r#"any(windows, target_os = "wasi", all(unix, target_pointer_width = "32"))"#),
+                ("#[cfg(not(any(unix, windows)))]", r#"#[cfg(not(any(unix, windows, target_os = "wasi")))]"#),
+            ],
+        )
+        .and_then(|()| {
+            edit(&dest.join("src/lib.rs"), &[(r#"#[cfg(not(panic = "unwind"))]"#, r#"#[cfg(all(not(panic = "unwind"), not(target_os = "wasi")))]"#)])
+        })
+        .with_context(|| {
+            format!("unexpected rustler layout in {}: neither the dlsym filler of Rustler 0.35 to 0.38 nor the target checks of 0.39", src.display())
+        })?;
     }
-    let wasi = r#"#[cfg(target_os = "wasi")]
+    edit(&sys.join("types.rs"), &[(UNIX_NIF_EVENT, &format!("{UNIX_NIF_EVENT}\n\n{WASI_NIF_EVENT}"))])
+}
+
+const UNIX_NIF_EVENT: &str = "#[cfg(unix)]\npub type ErlNifEvent = os::unix::io::RawFd;";
+
+const WASI_NIF_EVENT: &str = r#"#[cfg(target_os = "wasi")]
+pub type ErlNifEvent = std::os::raw::c_int;"#;
+
+const DLSYM_NIF_FILLER: &str = r#"#[cfg(not(target_os = "windows"))]
+mod internal {"#;
+
+const WASI_NIF_FILLER: &str = r#"#[cfg(target_os = "wasi")]
 mod internal {
     use super::DynNifFiller;
 
@@ -369,14 +392,18 @@ mod internal {
 
 #[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]
 mod internal {"#;
-    std::fs::write(&filler, text.replacen(unix, wasi, 1))?;
-    let types = dest.join("src/sys/types.rs");
-    let text = std::fs::read_to_string(&types)?;
-    let marker = "#[cfg(unix)]\npub type ErlNifEvent = os::unix::io::RawFd;";
-    if !text.contains(marker) {
-        bail!("unexpected rustler types.rs layout in {}", src.display());
+
+/// Replace the first occurrence of each `from` with its `to`, or leave the file as it was and
+/// fail when any `from` is missing.
+fn edit(path: &Path, edits: &[(&str, &str)]) -> Result<()> {
+    let mut text = std::fs::read_to_string(path)?;
+    for (from, to) in edits {
+        if !text.contains(from) {
+            bail!("{} has no {from:?}", path.display());
+        }
+        text = text.replacen(from, to, 1);
     }
-    std::fs::write(&types, text.replacen(marker, &format!("{marker}\n\n#[cfg(target_os = \"wasi\")]\npub type ErlNifEvent = std::os::raw::c_int;"), 1))?;
+    std::fs::write(path, text)?;
     Ok(())
 }
 
@@ -649,7 +676,8 @@ pub fn precompile(_wasm: &[u8], target: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_llvm, copy_project, find, fixup_iovec, fixup_sqlite, force_source_build, project_app, skip_in_copy};
+    use super::{check_llvm, copy_project, find, fixup_iovec, fixup_sqlite, force_source_build, patch_rustler, project_app, skip_in_copy};
+    use std::path::Path;
 
     #[test]
     fn a_bitcode_kit_links_only_with_its_own_llvm() {
@@ -730,5 +758,151 @@ mod tests {
         assert!(force_source_build("exqlite").ends_with("-elixir_make force_build [{exqlite,true}]"));
         assert!(!force_source_build("foo-bar").contains("force_build"));
         assert!(!force_source_build("x',true}] -eval halt() -y [{'").contains("-eval"));
+    }
+
+    const RUSTLER_ERL_NIF_EVENT: &str = r#"#[cfg(windows)]
+pub type ErlNifEvent = os::windows::raw::HANDLE;
+
+#[cfg(unix)]
+pub type ErlNifEvent = os::unix::io::RawFd;
+"#;
+
+    fn rustler_0_38(dir: &Path) {
+        write(
+            dir,
+            "src/sys/nif_filler.rs",
+            r#"pub(crate) trait DynNifFiller {}
+
+#[cfg(not(target_os = "windows"))]
+mod internal {
+    use super::DynNifFiller;
+}
+
+#[cfg(target_os = "windows")]
+mod internal {}
+"#,
+        );
+        write(dir, "src/sys/functions.rs", "use super::types::*;\n");
+        write(dir, "src/lib.rs", "pub mod sys;\n");
+        write(dir, "src/sys/types.rs", RUSTLER_ERL_NIF_EVENT);
+    }
+
+    fn rustler_0_39(dir: &Path) {
+        write(
+            dir,
+            "src/sys/nif_filler.rs",
+            r#"#[cfg(not(target_os = "macos"))]
+pub(crate) fn new() -> impl DynNifFiller {
+    NoopNifFiller
+}
+"#,
+        );
+        write(
+            dir,
+            "src/sys/functions.rs",
+            r#"        #[cfg(all(feature = $version, any(windows, all(unix, target_pointer_width = "32"))))]
+        use_snippet! {include, $version, "4"}
+
+        #[cfg(all(feature = $version, all(unix, target_pointer_width = "64")))]
+        use_snippet! {include, $version, "8"}
+
+#[cfg(not(any(unix, windows)))]
+compile_error!("rustler only supports unix and windows targets");
+"#,
+        );
+        write(
+            dir,
+            "src/lib.rs",
+            r#"#[cfg(not(panic = "unwind"))]
+compile_error!("Rustler relies on unwinding (panic = \"unwind\") for callback safety");
+"#,
+        );
+        write(dir, "src/sys/types.rs", RUSTLER_ERL_NIF_EVENT);
+    }
+
+    fn write(dir: &Path, rel: &str, text: &str) {
+        let path = dir.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    fn read(dir: &Path, rel: &str) -> String {
+        std::fs::read_to_string(dir.join(rel)).unwrap()
+    }
+
+    fn cfg_of<'a>(text: &'a str, item: &str) -> &'a str {
+        let lines: Vec<&str> = text.lines().collect();
+        let at = lines.iter().position(|l| l.contains(item)).unwrap_or_else(|| panic!("no {item} in:\n{text}"));
+        lines[at - 1].trim()
+    }
+
+    #[test]
+    fn rustler_0_38_finds_the_enif_api_through_aos_enif_lookup_on_wasi() {
+        let dir = crate::TestDir::new("rustler-0.38");
+        let (src, dest) = (dir.0.join("src"), dir.0.join("patched"));
+        rustler_0_38(&src);
+        patch_rustler(&src, &dest).unwrap();
+
+        let filler = read(&dest, "src/sys/nif_filler.rs");
+        assert_eq!(cfg_of(&filler, "use super::DynNifFiller;"), "mod internal {");
+        assert_eq!(cfg_of(&filler, "fn aos_enif_lookup"), r#"unsafe extern "C" {"#);
+        let cfgs: Vec<&str> = filler.lines().filter(|l| l.starts_with("#[cfg(")).collect();
+        assert_eq!(
+            cfgs,
+            [r#"#[cfg(target_os = "wasi")]"#, r#"#[cfg(all(not(target_os = "windows"), not(target_os = "wasi")))]"#, r#"#[cfg(target_os = "windows")]"#]
+        );
+
+        let types = read(&dest, "src/sys/types.rs");
+        assert_eq!(cfg_of(&types, "pub type ErlNifEvent = std::os::raw::c_int;"), r#"#[cfg(target_os = "wasi")]"#);
+        assert_eq!(cfg_of(&types, "pub type ErlNifEvent = os::unix::io::RawFd;"), "#[cfg(unix)]");
+
+        assert_eq!(read(&dest, "src/lib.rs"), read(&src, "src/lib.rs"));
+        assert_eq!(read(&dest, "src/sys/functions.rs"), read(&src, "src/sys/functions.rs"));
+        assert!(!read(&src, "src/sys/nif_filler.rs").contains("wasi"));
+    }
+
+    #[test]
+    fn rustler_0_39_admits_wasi_to_its_target_checks() {
+        let dir = crate::TestDir::new("rustler-0.39");
+        let (src, dest) = (dir.0.join("src"), dir.0.join("patched"));
+        rustler_0_39(&src);
+        patch_rustler(&src, &dest).unwrap();
+
+        let functions = read(&dest, "src/sys/functions.rs");
+        assert_eq!(
+            cfg_of(&functions, r#"use_snippet! {include, $version, "4"}"#),
+            r#"#[cfg(all(feature = $version, any(windows, target_os = "wasi", all(unix, target_pointer_width = "32"))))]"#
+        );
+        assert_eq!(
+            cfg_of(&functions, r#"use_snippet! {include, $version, "8"}"#),
+            r#"#[cfg(all(feature = $version, all(unix, target_pointer_width = "64")))]"#
+        );
+        assert_eq!(cfg_of(&functions, "rustler only supports unix and windows"), r#"#[cfg(not(any(unix, windows, target_os = "wasi")))]"#);
+
+        assert_eq!(cfg_of(&read(&dest, "src/lib.rs"), "relies on unwinding"), r#"#[cfg(all(not(panic = "unwind"), not(target_os = "wasi")))]"#);
+
+        let types = read(&dest, "src/sys/types.rs");
+        assert_eq!(cfg_of(&types, "pub type ErlNifEvent = std::os::raw::c_int;"), r#"#[cfg(target_os = "wasi")]"#);
+
+        assert_eq!(read(&dest, "src/sys/nif_filler.rs"), read(&src, "src/sys/nif_filler.rs"));
+        assert!(!read(&src, "src/sys/functions.rs").contains("wasi"));
+    }
+
+    #[test]
+    fn a_rustler_layout_it_does_not_know_is_refused_rather_than_built_half_patched() {
+        let dir = crate::TestDir::new("rustler-unknown");
+        let (src, dest) = (dir.0.join("src"), dir.0.join("patched"));
+        rustler_0_39(&src);
+        write(&src, "src/sys/functions.rs", r#"#[cfg(not(any(unix, windows, target_os = "redox")))]"#);
+        let err = patch_rustler(&src, &dest).unwrap_err().to_string();
+        assert!(err.contains("unexpected rustler layout") && err.contains("0.35 to 0.38") && err.contains("0.39"), "{err}");
+
+        rustler_0_39(&src);
+        write(&src, "src/lib.rs", "pub mod sys;\n");
+        assert!(patch_rustler(&src, &dest).unwrap_err().to_string().contains("unexpected rustler layout"));
+
+        rustler_0_38(&src);
+        write(&src, "src/sys/types.rs", "pub type ErlNifEvent = i32;\n");
+        assert!(patch_rustler(&src, &dest).unwrap_err().to_string().contains("types.rs"));
     }
 }

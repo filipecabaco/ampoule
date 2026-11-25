@@ -97,11 +97,19 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15]
         example: [c_nif, cluster, francis, phoenix_ecto, ports, rustler, sqlite]
+        rustler: [locked]
+        include:
+          - os: ubuntu-24.04
+            example: rustler
+            rustler: "0.38.0"
+          - os: macos-15
+            example: rustler
+            rustler: "0.38.0"
         exclude:
           # Needs Postgres, and macOS runners cannot run service containers.
           - os: macos-15
             example: phoenix_ecto
-    name: examples (${{ matrix.example }}, ${{ matrix.os }})
+    name: examples (${{ matrix.example }}${{ matrix.rustler != 'locked' && format(' {0}', matrix.rustler) || '' }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     services:
       postgres:
@@ -141,6 +149,10 @@ jobs:
 
       - name: Fetch wasi-sdk (to build NIFs at pack time)
         run: elixir scripts/engine.exs sdk
+
+      - name: Use Rustler ${{ matrix.rustler }}
+        if: matrix.rustler != 'locked'
+        run: cargo update --manifest-path examples/rustler/native/textkit/Cargo.toml -p rustler --precise ${{ matrix.rustler }}
 
       - name: End-to-end suite
         run: elixir scripts/examples.exs ${{ matrix.example }}

@@ -5,6 +5,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Rust NIFs pack on Rustler 0.39.
+
 ## [0.1.16] - 2026-11-25
 
 ### Security
