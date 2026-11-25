@@ -52,8 +52,8 @@ jobs:
 
       - uses: erlef/setup-beam@v1.24.1
         with:
-          otp-version: "28.5.0.4"
-          elixir-version: "1.19.5"
+          otp-version: "28.5.0.9"
+          elixir-version: "1.20.5"
 
       - name: Lint
         working-directory: runner
@@ -136,8 +136,8 @@ jobs:
 
       - uses: erlef/setup-beam@v1.24.1
         with:
-          otp-version: "28.5.0.4"
-          elixir-version: "1.19.5"
+          otp-version: "28.5.0.9"
+          elixir-version: "1.20.5"
 
       - name: Fetch wasi-sdk (to build NIFs at pack time)
         run: elixir scripts/engine.exs sdk
