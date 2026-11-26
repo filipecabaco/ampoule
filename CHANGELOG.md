@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Rust NIF builds are kept in `~/.cache/ampoule/rust/`, one directory per project and app, so
+  repacking recompiles only the NIF.
+
 ### Fixed
 
 - `:io.columns/0` and `:io.rows/0` return the terminal size instead of `{:error, :enotsup}`.

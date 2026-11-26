@@ -75,6 +75,8 @@ Packing caches the engine relinked with an app's NIFs (`runner/src/cache.rs`). T
 kit, the wasi-sdk and the `ampoule` version, but not the code in `runner/src/nif.rs` that drives
 the link: when changing how the engine is linked, pack with `AMPOULE_NO_CACHE=1`, or the old
 engine comes back from the cache.
+The crates `nif.rs` patches for WASI are cached the same way, by crate and `ampoule` version: when
+changing a patch, pack with `AMPOULE_NO_CACHE=1` too.
 
 ## Tests
 
