@@ -75,7 +75,8 @@ and for running alike.
 
 Tested with C (eiconv, and SQLite through `exqlite`: see [`examples/sqlite`](../../examples/sqlite)),
 C with setjmp/longjmp (libpg_query, through `pg_query_ex`), C++ with exceptions (snappy,
-prometheus_process_collector) and Rust (Rustler 0.38). Each dependency can have one native library.
+prometheus_process_collector) and Rust (Rustler 0.38 and 0.39). Each dependency can have one native
+library.
 
 A thread a NIF starts must return from its function: `enif_thread_exit` ends the thread without
 the cleanup wasi-libc would do, so joining that thread never returns.
