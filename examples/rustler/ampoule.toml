@@ -2,3 +2,6 @@
 
 [commands]   # `<binary> demo` evaluates the expression
 demo = "IO.puts(TextKit.slugify(\"Hello from Rust, inside wasm!\"))"
+
+[nifs.textkit]   # cargo features for the NIF's wasm build (used while packing, not packed)
+features = ["packed"]

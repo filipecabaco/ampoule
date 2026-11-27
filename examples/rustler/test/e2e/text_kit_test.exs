@@ -46,6 +46,10 @@ defmodule TextKit.E2ETest do
     assert eval!(bin, expr) == "2000"
   end
 
+  test "the NIF is built with the features in [nifs.textkit]", %{bin: bin} do
+    assert eval!(bin, "IO.inspect(TextKit.cargo_features())") == ~s|["packed"]|
+  end
+
   test "custom commands from ampoule.toml", %{bin: bin} do
     {out, 0} = PackedApp.run(bin, ["demo"])
     assert out =~ "hello-from-rust-inside-wasm"

@@ -50,6 +50,10 @@ host = "~/.config/my_app"
 guest = "/config"                # default: the expanded host path
 ro = false                       # read-only (default: false)
 create = true                    # create the host directory, mode 0700, when it is missing
+
+[nifs.mdex_native]               # how packing builds this app's Rust NIF (not packed)
+features = ["lumis"]             # cargo --features
+default_features = true          # false: cargo --no-default-features
 ```
 
 Most keys have a run option that overrides them where the binary runs; see [Running the packed
@@ -121,6 +125,19 @@ configuration. The default, `home = "private"`, makes `HOME` the app's private `
 
 VM flags written as in `vm.args`. They apply after the release's own `vm.args` and before
 `--vm-args`; see [VM flags](running.md#vm-flags).
+
+## `[nifs.<app>]`
+
+Cargo features for the Rust NIF of the dependency (or the project's own app) named `app`, which
+packing rebuilds for wasm: `features` becomes `--features`, and `default_features = false` becomes
+`--no-default-features`. Without an entry, the crate builds with its default features. This is the
+only setting packing uses and the binary does not carry.
+
+A package that picks its features in its own Elixir config, as RustlerPrecompiled packages do, does
+not tell `ampoule` which ones it picked, so set the same ones here; see [Rust](../guides/nifs.md#rust).
+When packing rebuilds NIFs, it fails on an entry for an app without a NIF, or whose NIF cargo does
+not build. A release with no NIFs, or one packed with `--allow-native`, rebuilds none and ignores
+`[nifs]`.
 
 ## `idle_stop`, `restart`, `memory_alarm`, `native_cache`
 

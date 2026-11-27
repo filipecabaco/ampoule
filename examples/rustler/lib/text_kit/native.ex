@@ -6,4 +6,5 @@ defmodule TextKit.Native do
   def word_count(_text), do: :erlang.nif_error(:nif_not_loaded)
   def sha256_hex(_data), do: :erlang.nif_error(:nif_not_loaded)
   def parse_int(_text), do: :erlang.nif_error(:nif_not_loaded)
+  def cargo_features, do: :erlang.nif_error(:nif_not_loaded)
 end

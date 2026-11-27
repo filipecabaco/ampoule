@@ -231,6 +231,34 @@ pub fn parse_main(s: &str) -> Main<'_> {
     Main::Eval(s)
 }
 
+/// `[nifs.<app>]`: how packing builds the Rust NIF of the dependency (or project) named `app`.
+/// Packing reads it and the binary does not carry it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NifBuild {
+    /// Cargo features to turn on, as `--features`.
+    #[serde(default)]
+    pub features: Vec<String>,
+    /// false passes `--no-default-features`.
+    #[serde(default = "yes")]
+    pub default_features: bool,
+}
+
+impl NifBuild {
+    /// The arguments to add to `cargo rustc`.
+    pub fn cargo_args(&self) -> Vec<String> {
+        let mut args = Vec::new();
+        if !self.default_features {
+            args.push("--no-default-features".to_string());
+        }
+        if !self.features.is_empty() {
+            args.push("--features".to_string());
+            args.push(self.features.join(","));
+        }
+        args
+    }
+}
+
 /// `[distribution]`: see `dist`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -297,6 +325,9 @@ pub struct Config {
     /// The app's own command line: `<binary> ARGS...` runs it with every argument (see `parse_main`).
     #[serde(default)]
     pub main: Option<String>,
+    /// `[nifs.<app>]`, by app: read while packing, not packed (`Manifest::new` leaves it out).
+    #[serde(default)]
+    pub nifs: BTreeMap<String, NifBuild>,
 }
 
 impl Config {
@@ -327,6 +358,11 @@ impl Config {
         }
         for m in &cfg.mounts {
             m.check().with_context(|| format!("{}: [[mounts]]", path.display()))?;
+        }
+        for (app, nif) in &cfg.nifs {
+            if let Some(bad) = nif.features.iter().find(|f| f.is_empty() || f.contains([',', ' '])) {
+                bail!("{}: [nifs.{app}] features: {bad:?} is not one feature name", path.display());
+            }
         }
         if cfg.memory_alarm.is_some_and(|p| p > 100) {
             bail!("{}: memory_alarm is a percentage (0-100)", path.display());
@@ -613,6 +649,20 @@ mod tests {
     #[test]
     fn config_rejects_unknown_keys() {
         assert!(load("[network]\nlisten = [4000]\nports = [1]\n").is_err());
+        assert!(load("[nifs.mdex_native]\nfeature = [\"lumis\"]\n").is_err());
+    }
+
+    #[test]
+    fn config_reads_nif_builds_as_cargo_args() {
+        let cfg = load("[nifs.mdex_native]\nfeatures = [\"lumis\", \"syntect\"]\n[nifs.other]\ndefault_features = false\n").unwrap();
+        assert_eq!(cfg.nifs["mdex_native"].cargo_args(), ["--features", "lumis,syntect"]);
+        assert_eq!(cfg.nifs["other"].cargo_args(), ["--no-default-features"]);
+        assert!(NifBuild { default_features: true, features: vec![] }.cargo_args().is_empty());
+    }
+
+    #[test]
+    fn config_rejects_a_feature_list_in_one_string() {
+        assert!(load("[nifs.mdex_native]\nfeatures = [\"lumis,syntect\"]\n").is_err());
     }
 
     fn vars(name: &str) -> Option<String> {

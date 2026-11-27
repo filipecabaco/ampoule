@@ -347,7 +347,10 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
     }
 
     pack::check_erts(&info, ERTS_VSN)?;
-    let mut manifest = Manifest::new(&info, load_config(a.config.as_deref())?);
+    let mut config = load_config(a.config.as_deref())?;
+    // How to build the NIFs: for packing only, so it stays out of the manifest.
+    let nif_builds = std::mem::take(&mut config.nifs);
+    let mut manifest = Manifest::new(&info, config);
     let (image, stats) = pack::build_rootfs(release)?;
 
     // NIFs: rebuilt for wasm and linked into an engine carried by the payload.
@@ -363,7 +366,7 @@ fn pack_release(own: &'static [u8], release: &Path, a: &PackArgs, project: Optio
             let tc = toolchain::Toolchain::locate()?;
             let natives = nif::natives(&stats.foreign_native);
             let linked = (|| -> Result<_> {
-                let built = nif::build(&project, &mix_env, &natives, &tc)?;
+                let built = nif::build(&project, &mix_env, &natives, &nif_builds, &tc)?;
                 let names = built.iter().map(|b| b.libname.as_str()).collect::<Vec<_>>().join(", ");
                 let cached = cache::dir().map(|d| cache::key(&tc, &built).map(|k| (d, k))).transpose()?;
                 let wasm = match cached.as_ref().and_then(|(d, k)| cache::get(d, k)) {
