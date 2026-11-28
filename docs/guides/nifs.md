@@ -66,10 +66,16 @@ has a NIF in the project's own `native/` crate.
 The relinked engine is kept in `~/.cache/ampoule/engines/`, under a hash of everything the link
 reads: the kit, the wasi-sdk version, the `ampoule` version, and each NIF's built archive. Packing
 again with the same NIFs skips the link, which is most of a pack (`examples/c_nif`: 13 s, then 1.3
-s), and gives the same binary. The NIFs themselves are still built on every pack. The eight most
-recently used engines are kept, and `AMPOULE_NO_CACHE=1` links without the cache. The same variable
-also turns off the runtime's [engine cache](../reference/runtime.md#the-engine-cache), for packing
-and for running alike.
+s), and gives the same binary. The eight most recently used engines are kept.
+
+C and C++ NIFs are built on every pack. A Rust NIF builds in `~/.cache/ampoule/rust/<app>-<hash>/`,
+with the crates ampoule patches for WASI, so packing again recompiles only the NIF's own crate.
+Each project keeps one directory there per app with a Rust NIF, emptied when ampoule, the wasi-sdk
+or the kit's ampoule-os headers change; remove them to reclaim the space. When the directory
+cannot be made, such as with a read-only `HOME`, the NIF builds without it.
+
+`AMPOULE_NO_CACHE=1` packs without either cache. The same variable also turns off the runtime's
+[engine cache](../reference/runtime.md#the-engine-cache), for packing and for running alike.
 
 ## What works
 

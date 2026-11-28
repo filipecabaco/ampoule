@@ -321,13 +321,35 @@ fn rust_crate(dep: &Path, lib: &NativeLib) -> Option<PathBuf> {
 #[derive(Deserialize)]
 struct CargoMetadata {
     packages: Vec<CargoPackage>,
+    resolve: Option<CargoResolve>,
+}
+
+#[derive(Deserialize)]
+struct CargoResolve {
+    root: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct CargoPackage {
+    id: String,
     name: String,
     version: String,
     manifest_path: PathBuf,
+    targets: Vec<CargoTarget>,
+}
+
+#[derive(Deserialize)]
+struct CargoTarget {
+    name: String,
+    kind: Vec<String>,
+}
+
+impl CargoMetadata {
+    fn staticlib(&self) -> Option<String> {
+        let root = self.resolve.as_ref()?.root.as_ref()?;
+        let lib = self.packages.iter().find(|p| &p.id == root)?.targets.iter().find(|t| t.kind.iter().any(|k| k.ends_with("lib")))?;
+        Some(format!("lib{}.a", lib.name.replace('-', "_")))
+    }
 }
 
 /// Rustler on WASI: the enif_* API is linked statically and found through `aos_enif_lookup`
@@ -380,6 +402,25 @@ mod internal {"#;
     Ok(())
 }
 
+impl CargoPackage {
+    fn patched(&self, dir: &Path, patch: fn(&Path, &Path) -> Result<()>) -> Result<PathBuf> {
+        let name = format!("{}-{}", self.name, self.version);
+        let dest = dir.join(&name);
+        if dest.is_dir() {
+            return Ok(dest);
+        }
+        let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+        patch(self.manifest_path.parent().unwrap(), &tmp)?;
+        if let Err(e) = std::fs::rename(&tmp, &dest) {
+            let _ = std::fs::remove_dir_all(&tmp);
+            if !dest.is_dir() {
+                return Err(e.into());
+            }
+        }
+        Ok(dest)
+    }
+}
+
 /// Crates that need source changes to build for WASI.
 fn wasi_patch(name: &str) -> Option<fn(&Path, &Path) -> Result<()>> {
     match name {
@@ -390,7 +431,6 @@ fn wasi_patch(name: &str) -> Option<fn(&Path, &Path) -> Result<()>> {
 
 fn build_rust(app: &str, krate: &Path, lib: &NativeLib, tc: &Toolchain, work: &Path) -> Result<BuiltNif> {
     eprintln!("==> building {app} for wasm (Rust crate {}, {})", krate.file_name().unwrap().to_string_lossy(), lib.rel_path);
-    let _ = std::fs::remove_dir_all(krate.join("target"));
     let output = Command::new("cargo").args(["metadata", "--format-version", "1"]).current_dir(krate).output().context("running cargo metadata")?;
     if !output.status.success() {
         bail!("cargo metadata failed for {app}: {}", String::from_utf8_lossy(&output.stderr));
@@ -404,11 +444,12 @@ fn build_rust(app: &str, krate: &Path, lib: &NativeLib, tc: &Toolchain, work: &P
     if toml.contains("[patch.crates-io]") {
         bail!("{app}: its Cargo.toml already has a [patch.crates-io] section");
     }
+    let staticlib = meta.staticlib().with_context(|| format!("{app}: the crate has no library target"))?;
+    let cache = crate::cache::rust_dir(app, krate, tc).unwrap_or_else(|| work.to_path_buf());
     toml.push_str("\n[patch.crates-io]\n");
     for pkg in &meta.packages {
         if let Some(patch) = wasi_patch(&pkg.name) {
-            let patched = work.join("patches").join(format!("{}-{}", pkg.name, pkg.version));
-            patch(pkg.manifest_path.parent().unwrap(), &patched)?;
+            let patched = pkg.patched(&cache.join("patches"), patch)?;
             toml.push_str(&format!("{} = {{ path = {:?} }}\n", pkg.name, patched.display().to_string()));
         }
     }
@@ -420,7 +461,8 @@ fn build_rust(app: &str, krate: &Path, lib: &NativeLib, tc: &Toolchain, work: &P
         tc.kit.display()
     );
     let status = Command::new("cargo")
-        .args(["rustc", "--release", "--target", WASM_TARGET, "--crate-type", "staticlib"])
+        .args(["rustc", "--release", "--target", WASM_TARGET, "--crate-type", "staticlib", "--target-dir"])
+        .arg(cache.join("target"))
         .current_dir(krate)
         .env(format!("CC_{target_env}"), tc.clang(false))
         .env(format!("CXX_{target_env}"), tc.clang(true))
@@ -432,11 +474,10 @@ fn build_rust(app: &str, krate: &Path, lib: &NativeLib, tc: &Toolchain, work: &P
     if !status.success() {
         bail!("building the Rust crate of {app} for wasm failed: {status}");
     }
-    let staticlib = std::fs::read_dir(krate.join("target").join(WASM_TARGET).join("release"))?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .find(|p| p.extension().is_some_and(|e| e == "a"))
-        .with_context(|| format!("{app}: cargo produced no static library"))?;
+    let staticlib = cache.join("target").join(WASM_TARGET).join("release").join(staticlib);
+    if !staticlib.is_file() {
+        bail!("{app}: cargo produced no static library at {}", staticlib.display());
+    }
 
     // ERTS calls <libname>_nif_init; Rustler exports nif_init.
     let shim_src = work.join(format!("{}_init.c", lib.libname));
@@ -649,7 +690,7 @@ pub fn precompile(_wasm: &[u8], target: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_llvm, copy_project, find, fixup_iovec, fixup_sqlite, force_source_build, project_app, skip_in_copy};
+    use super::{check_llvm, copy_project, find, fixup_iovec, fixup_sqlite, force_source_build, project_app, skip_in_copy, CargoMetadata, CargoPackage};
 
     #[test]
     fn a_bitcode_kit_links_only_with_its_own_llvm() {
@@ -730,5 +771,56 @@ mod tests {
         assert!(force_source_build("exqlite").ends_with("-elixir_make force_build [{exqlite,true}]"));
         assert!(!force_source_build("foo-bar").contains("force_build"));
         assert!(!force_source_build("x',true}] -eval halt() -y [{'").contains("-eval"));
+    }
+
+    #[test]
+    fn the_static_library_is_the_root_crate_s_library() {
+        let meta: CargoMetadata = serde_json::from_str(
+            r#"{
+                "packages": [
+                    {"id": "dep 1.0.0", "name": "dep", "version": "1.0.0", "manifest_path": "/r/dep/Cargo.toml",
+                     "targets": [{"name": "dep", "kind": ["lib"]}]},
+                    {"id": "my-nif 0.1.0", "name": "my-nif", "version": "0.1.0", "manifest_path": "/p/native/my-nif/Cargo.toml",
+                     "targets": [{"name": "build-script-build", "kind": ["custom-build"]}, {"name": "my-nif", "kind": ["cdylib"]}]}
+                ],
+                "resolve": {"root": "my-nif 0.1.0"}
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(meta.staticlib().as_deref(), Some("libmy_nif.a"));
+
+        let no_root: CargoMetadata = serde_json::from_str(r#"{"packages": [], "resolve": null}"#).unwrap();
+        assert_eq!(no_root.staticlib(), None);
+    }
+
+    #[test]
+    fn a_patched_crate_is_written_once_and_reused() {
+        let dir = crate::TestDir::new("patched-crate");
+        let src = dir.0.join("registry/rustler-0.39.0");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("Cargo.toml"), "[package]\n").unwrap();
+        let pkg = CargoPackage {
+            id: "rustler 0.39.0".into(),
+            name: "rustler".into(),
+            version: "0.39.0".into(),
+            manifest_path: src.join("Cargo.toml"),
+            targets: Vec::new(),
+        };
+        fn patch(src: &std::path::Path, dest: &std::path::Path) -> anyhow::Result<()> {
+            std::fs::create_dir_all(dest)?;
+            std::fs::write(dest.join("Cargo.toml"), std::fs::read_to_string(src.join("Cargo.toml"))? + "patched\n")?;
+            Ok(())
+        }
+
+        let patches = dir.0.join("patches");
+        let first = pkg.patched(&patches, patch).unwrap();
+        assert_eq!(first.file_name().unwrap(), "rustler-0.39.0");
+        assert_eq!(std::fs::read_to_string(first.join("Cargo.toml")).unwrap(), "[package]\npatched\n");
+
+        let modified = std::fs::metadata(first.join("Cargo.toml")).unwrap().modified().unwrap();
+        let again = pkg.patched(&patches, |_, _| anyhow::bail!("patched twice")).unwrap();
+        assert_eq!(again, first);
+        assert_eq!(std::fs::metadata(again.join("Cargo.toml")).unwrap().modified().unwrap(), modified);
+        assert_eq!(std::fs::read_dir(&patches).unwrap().count(), 1);
     }
 }

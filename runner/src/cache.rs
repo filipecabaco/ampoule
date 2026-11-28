@@ -15,10 +15,48 @@ const KEEP: usize = 8;
 
 /// `~/.cache/ampoule/engines`, or none with `AMPOULE_NO_CACHE` set (to anything but `0`).
 pub fn dir() -> Option<PathBuf> {
+    root().map(|r| r.join("engines"))
+}
+
+/// `~/.cache/ampoule/rust/<app>-<hash>`, where the Rust NIF at `krate` builds: one directory per
+/// project and app, so two projects packed at once never share cargo's output. Emptied when this
+/// ampoule, the wasi-sdk or the kit's ampoule-os headers change. None with `AMPOULE_NO_CACHE` set,
+/// or when the directory cannot be made: that only costs the next pack a full build.
+pub fn rust_dir(app: &str, krate: &Path, tc: &Toolchain) -> Option<PathBuf> {
+    rust_dir_in(&root()?, app, krate, tc)
+}
+
+fn rust_dir_in(root: &Path, app: &str, krate: &Path, tc: &Toolchain) -> Option<PathBuf> {
+    let mut h = Sha256::new();
+    field(&mut h, krate.to_string_lossy().as_bytes());
+    let dir = root.join("rust").join(format!("{app}-{}", &hex(h)[..16]));
+    rust_key(tc).and_then(|key| keyed_dir(&dir, &key)).inspect_err(|e| eprintln!("==> not caching the Rust build of {app}: {e}")).ok()
+}
+
+fn rust_key(tc: &Toolchain) -> Result<String> {
+    let mut h = Sha256::new();
+    field(&mut h, b"ampoule-rust-1");
+    field(&mut h, &std::fs::read(std::env::current_exe()?)?);
+    field(&mut h, &std::fs::read(tc.wasi_sdk.join("VERSION")).unwrap_or_default());
+    tree(&mut h, &tc.kit.join("ampoule-os"))?;
+    Ok(hex(h))
+}
+
+fn keyed_dir(dir: &Path, key: &str) -> Result<PathBuf> {
+    let stamp = dir.join("key");
+    if std::fs::read_to_string(&stamp).ok().as_deref() != Some(key) {
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir)?;
+        std::fs::write(&stamp, key)?;
+    }
+    Ok(dir.to_path_buf())
+}
+
+fn root() -> Option<PathBuf> {
     if std::env::var_os("AMPOULE_NO_CACHE").is_some_and(|v| v != "0" && !v.is_empty()) {
         return None;
     }
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/ampoule/engines"))
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/ampoule"))
 }
 
 /// Hash of everything `nif::link_engine` reads.
@@ -27,13 +65,7 @@ pub fn key(tc: &Toolchain, nifs: &[BuiltNif]) -> Result<String> {
     field(&mut h, b"ampoule-engine-1");
     field(&mut h, env!("CARGO_PKG_VERSION").as_bytes());
     field(&mut h, &std::fs::read(tc.wasi_sdk.join("VERSION")).unwrap_or_default());
-    let mut files = Vec::new();
-    walk(&tc.kit, &tc.kit, &mut files)?;
-    files.sort();
-    for rel in &files {
-        field(&mut h, rel.to_string_lossy().as_bytes());
-        field(&mut h, &std::fs::read(tc.kit.join(rel))?);
-    }
+    tree(&mut h, &tc.kit)?;
     // The link order of NIFs is the order given, so it is part of the key.
     for n in nifs {
         field(&mut h, n.libname.as_bytes());
@@ -43,7 +75,22 @@ pub fn key(tc: &Toolchain, nifs: &[BuiltNif]) -> Result<String> {
         field(&mut h, libs.join(",").as_bytes());
         field(&mut h, &std::fs::read(&n.archive)?);
     }
-    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(hex(h))
+}
+
+fn hex(h: Sha256) -> String {
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn tree(h: &mut Sha256, root: &Path) -> Result<()> {
+    let mut files = Vec::new();
+    walk(root, root, &mut files)?;
+    files.sort();
+    for rel in &files {
+        field(h, rel.to_string_lossy().as_bytes());
+        field(h, &std::fs::read(root.join(rel))?);
+    }
+    Ok(())
 }
 
 /// Length-prefixed, so no two different inputs hash the same bytes.
@@ -114,7 +161,9 @@ fn prune(dir: &Path, keep: usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::{get, prune, put};
+    use super::{get, keyed_dir, prune, put, rust_dir_in, rust_key};
+    use crate::toolchain::Toolchain;
+    use std::path::Path;
 
     fn scratch(name: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("ampoule-cache-{name}-{}", std::process::id()));
@@ -152,6 +201,54 @@ mod tests {
         let mut left: Vec<String> = std::fs::read_dir(&d).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
         left.sort();
         assert_eq!(left, ["3.wasm", "4.wasm", "notes.txt"]);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_rust_build_is_kept_under_the_same_key_and_emptied_under_another() {
+        let d = scratch("keyed").join("textkit");
+        keyed_dir(&d, "a").unwrap();
+        std::fs::write(d.join("built"), b"").unwrap();
+        keyed_dir(&d, "a").unwrap();
+        assert!(d.join("built").exists());
+        keyed_dir(&d, "b").unwrap();
+        assert!(!d.join("built").exists());
+        assert_eq!(std::fs::read_to_string(d.join("key")).unwrap(), "b");
+        std::fs::remove_dir_all(d.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_rust_build_is_keyed_by_the_ampoule_os_headers_it_compiles_against() {
+        let d = scratch("rust-key");
+        let tc = Toolchain { wasi_sdk: d.join("wasi-sdk"), kit: d.join("kit") };
+        std::fs::create_dir_all(tc.kit.join("ampoule-os")).unwrap();
+        std::fs::write(tc.kit.join("ampoule-os/ampoule_os.h"), "int a;").unwrap();
+        std::fs::write(tc.kit.join("liberts.a"), "1").unwrap();
+        let key = rust_key(&tc).unwrap();
+
+        std::fs::write(tc.kit.join("liberts.a"), "2").unwrap();
+        assert_eq!(rust_key(&tc).unwrap(), key);
+        std::fs::write(tc.kit.join("ampoule-os/ampoule_os.h"), "int b;").unwrap();
+        assert_ne!(rust_key(&tc).unwrap(), key);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn each_project_builds_a_rust_nif_in_its_own_dir_or_without_the_cache() {
+        let d = scratch("rust-dir");
+        let tc = Toolchain { wasi_sdk: d.join("wasi-sdk"), kit: d.join("kit") };
+        std::fs::create_dir_all(tc.kit.join("ampoule-os")).unwrap();
+        let (a, b) = (Path::new("/a/_build/ampoule-nif/deps/mdex/native/x"), Path::new("/b/_build/ampoule-nif/deps/mdex/native/x"));
+        let root = d.join("cache");
+        let dir_a = rust_dir_in(&root, "mdex", a, &tc).unwrap();
+        assert!(dir_a.is_dir() && dir_a.starts_with(root.join("rust")));
+        assert_eq!(rust_dir_in(&root, "mdex", a, &tc).unwrap(), dir_a);
+        assert_ne!(rust_dir_in(&root, "mdex", b, &tc).unwrap(), dir_a);
+
+        // A cache that cannot be made (a read-only or missing HOME) builds without it.
+        let file = d.join("not-a-dir");
+        std::fs::write(&file, b"").unwrap();
+        assert_eq!(rust_dir_in(&file, "mdex", a, &tc), None);
         std::fs::remove_dir_all(&d).unwrap();
     }
 }
