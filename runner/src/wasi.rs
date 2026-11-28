@@ -37,6 +37,8 @@ const OFLAGS_EXCL: i32 = 4;
 const OFLAGS_TRUNC: i32 = 8;
 
 const RIGHTS_FD_READ: u64 = 1 << 1;
+const RIGHTS_FD_SEEK: u64 = 1 << 2;
+const RIGHTS_FD_TELL: u64 = 1 << 5;
 const RIGHTS_FD_WRITE: u64 = 1 << 6;
 const RIGHTS_ALL: u64 = (1 << 30) - 1;
 /// wasi-libc derives fcntl(F_GETFL)'s access mode from these two rights.
@@ -425,7 +427,7 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
                         m if m == OFlags::WRONLY => RIGHTS_FD_WRITE,
                         _ => RIGHTS_FD_READ | RIGHTS_FD_WRITE,
                     };
-                    (ft, flags, RIGHTS_ALL_BUT_RW | rw)
+                    (ft, flags, rights_but_rw(fd) | rw)
                 },
                 (_, Err(e)) => return Err(e),
             };
@@ -1174,6 +1176,14 @@ fn poll_oneoff(k: &Kernel, subs: u32, events: u32, n: u32, out: u32) -> R<()> {
     m.set_u32(out, ready.len() as u32)
 }
 
+fn rights_but_rw(fd: BorrowedFd<'_>) -> u64 {
+    if fd.is_terminal() {
+        RIGHTS_ALL_BUT_RW & !(RIGHTS_FD_SEEK | RIGHTS_FD_TELL)
+    } else {
+        RIGHTS_ALL_BUT_RW
+    }
+}
+
 /// Whether to poll(2) the host fd of `e`; not when it is always ready: files, embedded files,
 /// directories, and stdio that is a non-tty character device (macOS poll(2) reports POLLNVAL
 /// for devices such as /dev/null).
@@ -1182,5 +1192,23 @@ fn pollable(e: &Entry) -> bool {
         (Kind::Socket(_) | Kind::Pipe(_), Ok(_)) => true,
         (Kind::Stdio(_), Ok(fd)) => !matches!(Stat::of_fd(fd), Ok(st) if st.filetype == FILETYPE_CHAR && !fd.is_terminal()),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{rights_but_rw, RIGHTS_FD_SEEK, RIGHTS_FD_TELL};
+    use std::os::fd::{AsFd, FromRawFd, OwnedFd};
+
+    #[test]
+    fn a_terminal_cannot_seek_but_dev_null_can() {
+        let pty = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY) };
+        assert!(pty >= 0, "posix_openpt: {}", std::io::Error::last_os_error());
+        let pty = unsafe { OwnedFd::from_raw_fd(pty) };
+        let null = std::fs::File::open("/dev/null").unwrap();
+        let seek = RIGHTS_FD_SEEK | RIGHTS_FD_TELL;
+
+        assert_eq!(rights_but_rw(pty.as_fd()) & seek, 0);
+        assert_eq!(rights_but_rw(null.as_fd()) & seek, seek);
     }
 }
