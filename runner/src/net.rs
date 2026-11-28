@@ -547,6 +547,17 @@ pub fn add(linker: &mut Linker<Ctx>) -> anyhow::Result<()> {
         })())
     })?;
 
+    linker.func_wrap(m, "winsize", |c: Caller<'_, Ctx>, fd: i32, ws: i32| -> i32 {
+        let k = k(&c);
+        ret((|| {
+            let w = winsize(k, fd)?;
+            for (i, v) in [w.ws_row, w.ws_col, w.ws_xpixel, w.ws_ypixel].into_iter().enumerate() {
+                k.mem.set_u16(ws as u32 + 2 * i as u32, v)?;
+            }
+            Ok(0)
+        })())
+    })?;
+
     linker.func_wrap(m, "signal_fd", |c: Caller<'_, Ctx>, fd: i32| {
         let k = k(&c);
         if let Ok(e) = k.get(fd) {
@@ -580,6 +591,15 @@ fn name_of(k: &Kernel, fd: i32, addr: u32, len: u32, peer: bool) -> R<i32> {
     Ok(0)
 }
 
+fn winsize(k: &Kernel, fd: i32) -> R<rustix::termios::Winsize> {
+    let e = k.get(fd)?;
+    let fd = e.fd()?;
+    if !rustix::termios::isatty(fd) {
+        return Err(errno::NOTTY);
+    }
+    rustix::termios::tcgetwinsize(fd).map_err(errno::rx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,5 +619,28 @@ mod tests {
     fn the_ipv4_ttl_and_loop_are_one_byte_where_the_host_wants_it() {
         assert_eq!(byte_valued(libc::IPPROTO_IP, libc::IP_MULTICAST_TTL), cfg!(not(target_os = "linux")));
         assert!(!byte_valued(libc::IPPROTO_IPV6, libc::IPV6_MULTICAST_HOPS));
+    }
+
+    #[test]
+    fn winsize_reads_the_terminal_size_from_the_host() {
+        use rustix::fs::{Mode, OFlags};
+        use rustix::pty::OpenptFlags;
+
+        let engine = wasmtime::Engine::new(&crate::engine::config()).unwrap();
+        let memory = wasmtime::SharedMemory::new(&engine, wasmtime::MemoryType::shared(1, 1)).unwrap();
+        let k = Kernel::new(crate::mem::Mem::new(memory), Vec::new(), Vec::new(), Vec::new(), Default::default());
+
+        let pty = rustix::pty::openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).unwrap();
+        rustix::pty::grantpt(&pty).unwrap();
+        rustix::pty::unlockpt(&pty).unwrap();
+        let terminal = rustix::fs::open(rustix::pty::ptsname(&pty, Vec::new()).unwrap(), OFlags::RDWR | OFlags::NOCTTY, Mode::empty()).unwrap();
+        let size = rustix::termios::Winsize { ws_row: 24, ws_col: 132, ws_xpixel: 0, ws_ypixel: 0 };
+        rustix::termios::tcsetwinsize(&terminal, size).unwrap();
+        let fd = k.insert(Kind::File { fd: terminal, ro: false }).unwrap();
+        let w = winsize(&k, fd).unwrap();
+        assert_eq!((w.ws_row, w.ws_col), (24, 132));
+
+        let null = k.insert(Kind::File { fd: std::fs::File::open("/dev/null").unwrap().into(), ro: true }).unwrap();
+        assert_eq!(winsize(&k, null).unwrap_err(), errno::NOTTY);
     }
 }

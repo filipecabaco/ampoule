@@ -22,6 +22,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <errno.h>
 #include <sys/types.h>
 #ifndef AMPOULE_OS_NO_NET
@@ -38,6 +39,8 @@ struct sockaddr_un {
 #endif
 #include <unistd.h>
 #include <sys/ioctl.h>
+#define __NEED_struct_winsize
+#include <bits/alltypes.h>
 #include <sys/resource.h>
 #include <time.h>
 #include <signal.h>
@@ -302,6 +305,9 @@ struct rlimit {
 #ifndef FIONBIO
 #define FIONBIO 0x5421
 #endif
+#ifndef TIOCGWINSZ
+#define TIOCGWINSZ 0x5413
+#endif
 
 AOS_IMPORT(socket) int32_t __aos_socket(int32_t domain, int32_t type, int32_t protocol);
 AOS_IMPORT(bind) int32_t __aos_bind(int32_t fd, const void *addr, uint32_t len);
@@ -318,6 +324,7 @@ AOS_IMPORT(shutdown) int32_t __aos_shutdown(int32_t fd, int32_t how);
 AOS_IMPORT(pipe) int32_t __aos_pipe(int32_t *fds);
 AOS_IMPORT(ioctl_int) int32_t __aos_ioctl_int(int32_t fd, int32_t request, int32_t *arg);
 AOS_IMPORT(gethostname) int32_t __aos_gethostname(char *name, uint32_t len);
+AOS_IMPORT(winsize) int32_t __aos_winsize(int32_t fd, struct winsize *ws);
 /* The runtime's host pid, so os:getpid/0 names a process host tools (ps, kill) can find; wasi-libc's
  * emulated getpid returns a constant. */
 AOS_IMPORT(getpid) int32_t __aos_getpid(void);
@@ -368,6 +375,15 @@ static inline ssize_t aos_send(int fd, const void *b, size_t n, int f) { return 
 static inline int aos_shutdown(int fd, int how) { return __aos_ret(__aos_shutdown(fd, how)); }
 static inline int aos_pipe(int fds[2]) { return __aos_ret(__aos_pipe(fds)); }
 static inline int aos_gethostname(char *n, size_t l) { return __aos_ret(__aos_gethostname(n, l)); }
+static inline int aos_ioctl(int fd, int request, ...) {
+    va_list ap;
+    va_start(ap, request);
+    void *arg = va_arg(ap, void *);
+    va_end(ap);
+    if (request == TIOCGWINSZ)
+        return __aos_ret(__aos_winsize(fd, arg));
+    return ioctl(fd, request, arg);
+}
 static inline pid_t aos_getpid(void) { return (pid_t)__aos_getpid(); }
 static inline int aos_dup(int fd) { return __aos_ret(__aos_dup(fd)); }
 static inline int aos_forker(void) { return __aos_ret(__aos_forker()); }
@@ -484,6 +500,7 @@ static inline ssize_t aos_sendmsg(int fd, const struct msghdr *m, int f) { (void
 #endif
 #define pipe aos_pipe
 #define gethostname aos_gethostname
+#define ioctl aos_ioctl
 #define getpid aos_getpid
 #define dup(fd) aos_dup(fd)
 #define pthread_exit aos_pthread_exit
