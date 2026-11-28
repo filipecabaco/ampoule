@@ -18,6 +18,7 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
+use crate::config::NifBuild;
 use crate::toolchain::{Toolchain, WASM_TARGET};
 
 pub struct NativeLib {
@@ -388,8 +389,9 @@ fn wasi_patch(name: &str) -> Option<fn(&Path, &Path) -> Result<()>> {
     }
 }
 
-fn build_rust(app: &str, krate: &Path, lib: &NativeLib, tc: &Toolchain, work: &Path) -> Result<BuiltNif> {
-    eprintln!("==> building {app} for wasm (Rust crate {}, {})", krate.file_name().unwrap().to_string_lossy(), lib.rel_path);
+fn build_rust(app: &str, krate: &Path, lib: &NativeLib, cargo_args: &[String], tc: &Toolchain, work: &Path) -> Result<BuiltNif> {
+    let with = if cargo_args.is_empty() { String::new() } else { format!(", {}", cargo_args.join(" ")) };
+    eprintln!("==> building {app} for wasm (Rust crate {}, {}{with})", krate.file_name().unwrap().to_string_lossy(), lib.rel_path);
     let _ = std::fs::remove_dir_all(krate.join("target"));
     let output = Command::new("cargo").args(["metadata", "--format-version", "1"]).current_dir(krate).output().context("running cargo metadata")?;
     if !output.status.success() {
@@ -421,6 +423,7 @@ fn build_rust(app: &str, krate: &Path, lib: &NativeLib, tc: &Toolchain, work: &P
     );
     let status = Command::new("cargo")
         .args(["rustc", "--release", "--target", WASM_TARGET, "--crate-type", "staticlib"])
+        .args(cargo_args)
         .current_dir(krate)
         .env(format!("CC_{target_env}"), tc.clang(false))
         .env(format!("CXX_{target_env}"), tc.clang(true))
@@ -449,7 +452,21 @@ fn build_rust(app: &str, krate: &Path, lib: &NativeLib, tc: &Toolchain, work: &P
 }
 
 /// Rebuild the native dependencies of the release built from `project` for wasm.
-pub fn build(project: &Path, mix_env: &str, natives: &[NativeLib], tc: &Toolchain) -> Result<Vec<BuiltNif>> {
+/// Every `[nifs.<app>]` names an app whose NIF is rebuilt: a misspelled or stale one would
+/// otherwise set features on nothing.
+fn check_builds(builds: &BTreeMap<String, NifBuild>, natives: &[NativeLib]) -> Result<()> {
+    for app in builds.keys() {
+        if !natives.iter().any(|n| &n.app == app) {
+            let apps = natives.iter().map(|n| n.app.as_str()).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>().join(", ");
+            bail!("[nifs.{app}] in ampoule.toml: {app} has no NIF in this release (apps with NIFs: {apps})");
+        }
+    }
+    Ok(())
+}
+
+/// `builds` is `[nifs.<app>]` from ampoule.toml: cargo features for an app's Rust NIF.
+pub fn build(project: &Path, mix_env: &str, natives: &[NativeLib], builds: &BTreeMap<String, NifBuild>, tc: &Toolchain) -> Result<Vec<BuiltNif>> {
+    check_builds(builds, natives)?;
     let work = project.join("_build/ampoule-nif");
     let deps = work.join("deps");
     let build = work.join(mix_env);
@@ -500,9 +517,13 @@ pub fn build(project: &Path, mix_env: &str, natives: &[NativeLib], tc: &Toolchai
         };
         clean_host_artifacts(&dep_dir)?;
         apply_fixups(&dep_dir)?;
+        let cargo_args = builds.get(app).map(NifBuild::cargo_args).unwrap_or_default();
         if let Some(krate) = rust_crate(&dep_dir, lib) {
-            built.push(build_rust(app, &krate, lib, tc, &work)?);
+            built.push(build_rust(app, &krate, lib, &cargo_args, tc, &work)?);
             continue;
+        }
+        if builds.contains_key(app) {
+            bail!("[nifs.{app}] in ampoule.toml: the NIF of {app} ({}) is not built by cargo, so it has no features to set", lib.rel_path);
         }
         let _ = std::fs::remove_dir_all(build.join("lib").join(app));
         eprintln!("==> building {app} for wasm ({})", lib.rel_path);
@@ -649,7 +670,17 @@ pub fn precompile(_wasm: &[u8], target: &str) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_llvm, copy_project, find, fixup_iovec, fixup_sqlite, force_source_build, project_app, skip_in_copy};
+    use super::{check_builds, check_llvm, copy_project, find, fixup_iovec, fixup_sqlite, force_source_build, project_app, skip_in_copy, NativeLib, NifBuild};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn nif_builds_must_name_an_app_with_a_nif() {
+        let natives = [NativeLib { app: "mdex_native".into(), rel_path: "priv/native/libmdex_native_nif.so".into(), libname: "mdex_native_nif".into() }];
+        let builds = |app: &str| BTreeMap::from([(app.to_string(), NifBuild { features: vec!["lumis".into()], default_features: true })]);
+        assert!(check_builds(&builds("mdex_native"), &natives).is_ok());
+        let err = check_builds(&builds("mdex"), &natives).unwrap_err().to_string();
+        assert!(err.contains("[nifs.mdex]") && err.contains("mdex_native"), "{err}");
+    }
 
     #[test]
     fn a_bitcode_kit_links_only_with_its_own_llvm() {

@@ -16,4 +16,7 @@ defmodule TextKit do
 
   @doc "`{:ok, integer}`, or `{:error, :invalid}` when `text` is not an integer."
   defdelegate parse_int(text), to: Native
+
+  @doc "The cargo features the NIF was built with: `[\"packed\"]` inside the packed binary."
+  defdelegate cargo_features, to: Native
 end

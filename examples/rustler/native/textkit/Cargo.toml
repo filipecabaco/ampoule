@@ -10,3 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 rustler = "0.38"
 sha2 = "0.10"
+
+[features]
+# Off on the host. `[nifs.textkit]` in ../../ampoule.toml turns it on for the packed binary.
+packed = []

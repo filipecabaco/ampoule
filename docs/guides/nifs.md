@@ -61,6 +61,18 @@ Rust NIFs (Rustler, in a dependency or in the project's own `native/`) are built
 from Rust rather than panicking: on wasm a panic aborts the VM. [`examples/rustler`](../../examples/rustler)
 has a NIF in the project's own `native/` crate.
 
+The crate builds with its default features. A NIF whose features the app chooses in Elixir needs
+them repeated in `ampoule.toml`, because `ampoule` builds the crate with cargo and never sees that
+config. For example, an app with `config :mdex_native, syntax_highlighter: :lumis` sets:
+
+```toml
+[nifs.mdex_native]
+features = ["lumis"]
+```
+
+`default_features = false` adds `--no-default-features`; see
+[`[nifs.<app>]`](../reference/configuration.md#nifsapp).
+
 ## The engine cache for packing
 
 The relinked engine is kept in `~/.cache/ampoule/engines/`, under a hash of everything the link

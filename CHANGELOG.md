@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `[nifs.<app>]` in `ampoule.toml` sets the cargo features (`features`, `default_features`) of an
+  app's Rust NIF for its wasm build.
+
 ## [0.1.16] - 2026-11-25
 
 ### Security

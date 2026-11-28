@@ -37,4 +37,15 @@ fn parse_int(text: &str) -> Result<i64, Atom> {
     text.trim().parse().map_err(|_| atoms::invalid())
 }
 
+// The cargo features this build has: the e2e suite checks that `[nifs.textkit]` in ampoule.toml
+// reached cargo.
+#[rustler::nif]
+fn cargo_features() -> Vec<&'static str> {
+    if cfg!(feature = "packed") {
+        vec!["packed"]
+    } else {
+        vec![]
+    }
+}
+
 rustler::init!("Elixir.TextKit.Native");

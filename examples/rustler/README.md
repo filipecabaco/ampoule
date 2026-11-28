@@ -18,6 +18,8 @@ Packing needs wasi-sdk 34 and the NIF kit, which the release archives include; s
 - `native/textkit/src/lib.rs`: plain Rustler NIFs, a dirty-CPU NIF, a pure-Rust dependency (`sha2`),
   and a `Result` that becomes `{:ok, _}` / `{:error, _}`.
 - Return errors instead of panicking: on wasm a Rust panic aborts the whole VM.
+- `ampoule.toml`: the `demo` command, and `[nifs.textkit]`, which turns the crate's `packed` cargo
+  feature on for the wasm build.
 
 ## Tests
 
