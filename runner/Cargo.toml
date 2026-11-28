@@ -27,7 +27,7 @@ libc = "0.2"
 # Writes an arm64 macOS payload as a signed Mach-O section, so packed binaries can be signed with a
 # Developer ID and notarized (see pack.rs).
 libsui = "0.16"
-rustix = { version = "1.1", features = ["event", "fs", "mm", "net", "param", "pipe", "process", "rand", "system", "time"] }
+rustix = { version = "1.1", features = ["event", "fs", "mm", "net", "param", "pipe", "process", "rand", "system", "termios", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
@@ -39,6 +39,9 @@ zstd = "0.14"
 wasmtime = { version = "49", default-features = false, features = ["anyhow", "cranelift", "all-arch", "gc", "gc-drc", "threads", "parallel-compilation", "std", "runtime"] }
 sha2 = "0.11"
 zstd = "0.14"
+
+[dev-dependencies]
+rustix = { version = "1.1", features = ["pty"] }
 
 [profile.release]
 lto = "thin"

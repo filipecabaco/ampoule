@@ -5,6 +5,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `:io.columns/0` and `:io.rows/0` return the terminal size instead of `{:error, :enotsup}`.
+
 ## [0.1.16] - 2026-11-25
 
 ### Security
